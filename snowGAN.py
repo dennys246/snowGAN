@@ -3,6 +3,9 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 from glob import glob
+
+sys.path.append("/Users/dennyschaedig/Scripts/avai/src/snowMaker")
+
 from pipeline import pipeline
 
 # Configure tensorflow
@@ -349,31 +352,38 @@ class _discriminator:
             b_1 (float) - Beta 1 hyperparameter for optimizer
             b_2 (float) - Beta 2 hyperparameter for optimizer
         """
-        self.model = tf.keras.Sequential()
-        self.model.add(tf.keras.layers.Conv2D(64, (5, 5), strides = (2, 2), padding = 'same', input_shape = (self.resolution[0], self.resolution[1], 3)))
-        self.model.add(tf.keras.layers.LeakyReLU(0.25))
+        inputs = tf.keras.Input(shape=(self.resolution[0], self.resolution[1], 3))
 
-        self.model.add(tf.keras.layers.Conv2D(128, (5, 5), strides = (2, 2), padding = 'same'))
-        self.model.add(tf.keras.layers.LeakyReLU(0.25))
+        # First block
+        x = tf.keras.layers.Conv2D(64, (5, 5), strides=(2, 2), padding='same')(inputs)
+        x = tf.keras.layers.LeakyReLU(0.25)(x)
 
-        self.model.add(tf.keras.layers.Conv2D(256, (5, 5), strides = (2, 2), padding = 'same'))
-        self.model.add(tf.keras.layers.LeakyReLU(0.25))
+        # Second block
+        x = tf.keras.layers.Conv2D(128, (5, 5), strides=(2, 2), padding='same')(x)
+        x = tf.keras.layers.LeakyReLU(0.25)(x)
 
-        self.model.add(tf.keras.layers.Conv2D(512, (5, 5), strides = (2, 2), padding = 'same'))
-        self.model.add(tf.keras.layers.LeakyReLU(0.25))
+        # Third block
+        x = tf.keras.layers.Conv2D(256, (5, 5), strides=(2, 2), padding='same')(x)
+        x = tf.keras.layers.LeakyReLU(0.25)(x)
 
-        self.model.add(tf.keras.layers.Conv2D(1024, (5, 5), strides = (2, 2), padding = 'same'))
-        self.model.add(tf.keras.layers.LeakyReLU(0.25))
+        # Fourth block
+        x = tf.keras.layers.Conv2D(512, (5, 5), strides=(2, 2), padding='same')(x)
+        x = tf.keras.layers.LeakyReLU(0.25)(x)
 
-        self.model.add(tf.keras.layers.Flatten())
-        self.model.add(tf.keras.layers.Dense(1))  # Binary classification (real/synthetic)
+        # Fifth block
+        x = tf.keras.layers.Conv2D(1024, (5, 5), strides=(2, 2), padding='same')(x)
+        x = tf.keras.layers.LeakyReLU(0.25)(x)
 
-        # Build the model by initializing weights and biases using glorot uniform
-        self.model.build()
+        # Output
+        x = tf.keras.layers.Flatten()(x)
+        outputs = tf.keras.layers.Dense(1)(x)  # Binary classification (real/synthetic)
+
+        # Build the model
+        self.model = tf.keras.Model(inputs, outputs, name="Discriminator")
         self.model.summary()
 
-        # Add discriminator optimizer as Adam with passes in parameters
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate = lr, beta_1 = b_1, beta_2 = b_2)
+        # Optimizer
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr, beta_1=b_1, beta_2=b_2)
 
     def loss(self, real_output, synthetic_output, gp, lambda_gp = 10.0):
         """
@@ -452,41 +462,50 @@ class _generator:
             b_1 (float) - Beta 1 hyperparameter for optimizer
             b_2 (float) - Beta 2 hyperparameter for optimizer
         """
-        self.model = tf.keras.Sequential()
+        latent_dim = 100  # Assuming your input latent vector size
 
-        # Start with a dense layer
-        self.model.add(tf.keras.layers.Dense(16 * 16 * 1024, use_bias = False, input_shape = (100,)))
-        self.model.add(tf.keras.layers.Reshape((16, 16, 1024)))  # Starting at (16, 16, 1024)
+        inputs = tf.keras.Input(shape=(latent_dim,))
 
-        # Iteratively add conv2D transposional layers paired with batch norm and leaky relu activations
-        self.model.add(tf.keras.layers.Conv2DTranspose(512, (5, 5), strides = (2, 2), padding = 'same'))
-        self.model.add(tf.keras.layers.BatchNormalization())
-        self.model.add(tf.keras.layers.LeakyReLU())
+        # Dense projection + reshape
+        x = tf.keras.layers.Dense(16 * 16 * 1024, use_bias=False)(inputs)
+        x = tf.keras.layers.Reshape((16, 16, 1024))(x)
 
-        self.model.add(tf.keras.layers.Conv2DTranspose(256, (5, 5), strides = (2, 2), padding = 'same'))
-        self.model.add(tf.keras.layers.BatchNormalization())
-        self.model.add(tf.keras.layers.LeakyReLU())
+        # Block 1
+        x = tf.keras.layers.Conv2DTranspose(512, (5, 5), strides=(2, 2), padding='same')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.LeakyReLU()(x)
 
-        self.model.add(tf.keras.layers.Conv2DTranspose(128, (5, 5), strides = (2, 2), padding = 'same'))
-        self.model.add(tf.keras.layers.BatchNormalization())
-        self.model.add(tf.keras.layers.LeakyReLU())
+        # Block 2
+        x = tf.keras.layers.Conv2DTranspose(256, (5, 5), strides=(2, 2), padding='same')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.LeakyReLU()(x)
 
-        self.model.add(tf.keras.layers.Conv2DTranspose(64, (5, 5), strides = (2, 2), padding = 'same'))
-        self.model.add(tf.keras.layers.BatchNormalization())
-        self.model.add(tf.keras.layers.LeakyReLU())
+        # Block 3
+        x = tf.keras.layers.Conv2DTranspose(128, (5, 5), strides=(2, 2), padding='same')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.LeakyReLU()(x)
 
-        self.model.add(tf.keras.layers.Conv2DTranspose(32, (5, 5), strides = (2, 2), padding = 'same'))
-        self.model.add(tf.keras.layers.BatchNormalization())
-        self.model.add(tf.keras.layers.LeakyReLU())
+        # Block 4
+        x = tf.keras.layers.Conv2DTranspose(64, (5, 5), strides=(2, 2), padding='same')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.LeakyReLU()(x)
 
-        self.model.add(tf.keras.layers.Conv2DTranspose(3, (5, 5), strides = (2, 2), padding = 'same', use_bias = False, activation = 'tanh'))
+        # Block 5
+        x = tf.keras.layers.Conv2DTranspose(32, (5, 5), strides=(2, 2), padding='same')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+        x = tf.keras.layers.LeakyReLU()(x)
 
-        # Call for the model to build and initialize weights with glorot uniform
-        self.model.build()
+        # Output layer
+        outputs = tf.keras.layers.Conv2DTranspose(
+            3, (5, 5), strides=(2, 2), padding='same', use_bias=False, activation='tanh'
+        )(x)
+
+        # Build model
+        self.model = tf.keras.Model(inputs, outputs, name="Generator")
         self.model.summary()
 
-        # Add generator optimizer as Adam with passes in parameters
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate = lr, beta_1 = b_1, beta_2 = b_2)
+        # Optimizer
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr, beta_1=b_1, beta_2=b_2)
 
     def loss(self, synthetic_output):
         """
