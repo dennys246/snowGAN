@@ -4,10 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from glob import glob
 
-sys.path.append("/Users/dennyschaedig/Scripts/avai/src/snowMaker")
-
-from pipeline import pipeline
-
 # Configure tensorflow
 from tensorflow.keras.mixed_precision import set_global_policy
 tf.config.optimizer.set_jit(True)  # Use XLA computation for faster runtime operations
@@ -37,8 +33,8 @@ class snowGAN:
             load_model() - Loads a pre-trained generator & discriminator models, histories and training progress
             plot_history() - Plots the current training history
             make_movie() - Creates a .mp4 movie of images generates over learning batches to showcase learning progress
-
         """
+
         # Check if model folder rebuilt requested
         if new and os.path.exists(path):
             # Double check with user model is to be rebuilt
@@ -53,13 +49,9 @@ class snowGAN:
         if not os.path.exists(self.path):
             os.makedirs(f"{self.path}synthetic_images/", exist_ok = True)
 
-        
-
-        # Initialize pipeline and the generator/discriminator
-        self.pipe = pipeline(self.path, self.resolution)
+        # Initialize generator and discriminator
         self.disc = _discriminator(self.resolution)
         self.gen = _generator(self.resolution)
-        self.loss = {'disc': [], 'gen': []}
 
         # Check if model could be loaded
         if path and new == False:
@@ -68,54 +60,11 @@ class snowGAN:
 
         # Define training runtime parameters
         self.resolution = resolution # Resolution to resample images to
-        self.batch_size = 8 # Number of images to load in per training batch
-        self.epochs = 50 # Number of training epochs per training batch
+        
         self.noise_dimension = 100 # Length of noise seed to be fed into generator
-        self.synthetics = 10 # Number of synthetic images to generate after training
         self.lambda_gp = 10.0 # Regularization parameter
 
         atexit.register(self.save_model)
-
-    def train(self, batches = None, batch_size = 8, epochs = None):
-        """
-        Initializes training the discriminator and generator based on requested
-        runtime behavioral. The model is saved after every training batch to preserve
-        training history. 
-        
-        Function arguments:
-            batches (int or None) - Number of training batches to learn from before stopping
-            batch_size (int) - Number of images to load into each training batch
-            epochs (int or None) - Number of epochs to train per batch, defaults to class default
-        """
-
-        # Update hyperparameters if passed in before training
-        if not batches: batches = int(round(len(self.pipe.avail_photos)/batch_size, 0))
-        if batch_size: self.batch_size = batch_size
-        if epochs: self.epochs = epochs
-
-        # Assess current training progress of the model
-        previous_batches = len(glob(f"{self.path}/synthetic_images/batch_*/"))
-
-        # Increment batches to account for past training history
-        batches += previous_batches
-
-        # Iterate through requested training batches 
-        for batch in range(previous_batches, batches):
-
-            self.x = self.pipe.load_batch(self.batch_size) # Load a new batch of subjects
-
-            print(f"Training on batch {batch + 1}...")
-            for epoch in range(self.epochs): # Iterate through each requested epoch
-                self.learn(self.x) # Train on batch of images
-                print(f'Epoch {epoch + 1} | Generator loss: {round(float(self.loss['gen'][-1]), 3)} | Discrimintator loss: {round(float(self.loss['disc'][-1]), 3)} |')
-                
-                self.plot_history() # Update history with progress
-            
-            # Generate synthetic images to the batch folder to track progress
-            _ = self.generate(f"synthetic_batch_{batch}", f"Synthetic Image after {round((float(batch)/float(batches))*100, 2)}%", f"batch_{batch}/")
-            
-            # Save the models state
-            self.save_model(f"{self.path}/synthetic_images/batch_{batch}") # Need to consider more dynamic way to do this and remove old history
 
 
     def learn(self, images, disc_steps = 1, gen_steps = 3):
@@ -174,152 +123,6 @@ class snowGAN:
         # Record loss of models to their histories - Should this be within training loops? Might be deceptive if not
         self.loss['gen'].append(gen_loss)
         self.loss['disc'].append(disc_loss)
-
-
-    def generate(self, filename_prefix = 'synthetic', title = "Synthetic Image", subfolder = ""):
-        """
-        Generate synthetic images using the currently loaded generator and save
-        the images to the model's synthetic images folder.
-
-        Function arguments:
-            filename_prefix (str) - prefix to give the filename
-            title (str) - Title to give the synthetically generated images
-            subfolder (str) - Child folder to build and save synthetic images to
-        """
-        # Create a random fix seed for consistent visualization
-        seed = tf.random.normal([self.synthetics, self.noise_dimension])
-
-        # Generate synthetic images
-        synthetic_images = self.gen.model(seed, training=False)
-        print(f"Synthetic images generated: {synthetic_images.shape}")
-        
-        # Iterate through each synthetic image
-        for ind in range(synthetic_images.shape[0]):
-            
-            if subfolder: # Ensure output folders exist
-                os.makedirs(f"{self.path}synthetic_images/{subfolder}", exist_ok = True)
-            
-            # Construct image filename
-            filename = f"{self.path}synthetic_images/{subfolder}{filename_prefix}_image_{ind}.png"
-
-            # Reformat generated image to RGB from BGR
-            image = synthetic_images[ind].numpy()
-            print(f"Image (prior) shape {image.shape} | max {image.max()} | deviation {image.std()}")
-            image = np.clip((image + 1) * 127.5, 0, 255).astype(np.uint8)
-            print(f"Image (prior) shape {image.shape} | max {image.max()} | deviation {image.std()}")
-
-            # Save image with parameters provided
-            plt.imshow(image)
-            plt.title(title)
-            plt.axis('off')
-            plt.savefig(filename)
-            plt.close()
-        return synthetic_images
-
-    def save_model(self, path = None):
-        """
-        Save the currently loaded generator and discriminator to a given path
-
-        Function arguments:
-            path (str) - Folder to save the generator and discriminator .keras files
-        """
-        # Update path if none passed in
-        if path == None:
-            path = self.path
-        
-        # Save generator and discriminator as .keras files
-        self.gen.model.save(f"{path}/generator.keras")
-        self.disc.model.save(f"{path}/discriminator.keras")
-        print(f"Models saved in {path}...")
-
-    def load_model(self, path = None):
-        """
-        Load the generator and discriminator into the snowGAN object from the path passed in
-        
-        Function arguments:
-            path (str) - Folder containing the generator and discriminator .keras files
-        """
-        # Update path if none passed in
-        if path == None:
-            path = self.path
-
-        # Load generator and discriminator .keras files
-        self.gen.model = tf.keras.models.load_model(f"{path}/generator.keras")
-        self.disc.model = tf.keras.models.load_model(f"{path}/discriminator.keras")
-        print(f"Models loaded from {path}...")
-
-    def plot_history(self):
-        """
-        Plot and save the generator and discriminator history loaded in the snowGAN object
-        """
-        # Plot the generator and discriminator loss history
-        plt.plot(self.loss['gen'], label = 'Generator loss')
-        plt.plot(self.loss['disc'], label = 'Discriminator loss')
-        plt.title("GAN History")
-        plt.legend()
-        plt.ylabel("Loss")
-        plt.xlabel("Epochs")
-        plt.savefig(f'{self.path}history.png')
-        plt.close()
-
-        # Save the current generate loss progress
-        with open(f"{self.path}generator_loss.txt", "w") as file:
-            for loss in self.loss['gen']:
-                file.write(f"{loss}\n")
-
-        # Save the current discriminator loss
-        with open(f"{self.path}discriminator_loss.txt", "w") as file:
-            for loss in self.loss['disc']:
-                file.write(f"{loss}\n")
-
-    def make_movie(self, videoname = "snowgan.mp4", framerate = 15):
-        """
-        Create a .mp4 movie of the batch history of synthetic images generated to 
-        display the progression of what features the snowGAN generator (and presumably 
-        discriminator) learned.
-
-        Function arguments:
-            videoname (str) - String of the videoname to save the .mp4 file generated
-            framerate (int) - Framerate to set the .mp4 video of synthetic image history
-        """
-        
-        videoname = f"{self.path}/{videoname}" #Define video name using path and video
-
-        # Create a regular expression pattern to find batch images
-        pattern = re.compile(r"batch_(\d+)/synthetic_batch_\d+_image_(\d+)\.png")
-        
-        batches = {} # Define dict variable to hold image filenames relative to their batch
-        
-        # Sort all synthetic images into batches
-        synthetic_files = sorted(glob(f"{self.path}/synthetic_images/batch_*/*.png")) # Grab all synthetic images
-        for file in synthetic_files: # Iterate through images
-            # Apply the regular expression pattern and grab batch
-            match = pattern.search(file)
-            batch = int(match.group(1))
-
-            # Create new batch key in batches if necessary
-            if batch not in batches.keys(): batches[batch] = []
-                
-            # Add synthetic images filename to batch
-            batches[batch].append(file)
-        
-        # Read the first image to get dimensions
-        image = cv2.imread(batches[0][0])
-        height, width, layers = image.shape
-
-        # Initialize the video writer
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # Codec
-        video = cv2.VideoWriter(videoname, fourcc, framerate, (width, height))
-
-        # Add images to the video
-        for batch in sorted(batches.keys()):
-            for image_file in batches[batch]:
-                image = cv2.imread(image_file)
-                video.write(image)
-
-        # Release the video writer and clear memory
-        video.release()
-        cv2.destroyAllWindows()
 
 
 class _discriminator:
