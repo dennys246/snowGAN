@@ -26,13 +26,7 @@ class snowGAN:
             new (bool) - Boolean whether to reinitialize models weights before training
         
         Methods:
-            train() - Initializes a training session for iterating through a set of images
             learn() -  Orchestrates training steps for both the discriminator and generator
-            generate() - Generates a synthetic image using the currently loaded generator
-            save_model() - Saves the generator & discriminator models, histories and training progress
-            load_model() - Loads a pre-trained generator & discriminator models, histories and training progress
-            plot_history() - Plots the current training history
-            make_movie() - Creates a .mp4 movie of images generates over learning batches to showcase learning progress
         """
 
         # Check if model folder rebuilt requested
@@ -60,7 +54,7 @@ class snowGAN:
 
         # Define training runtime parameters
         self.resolution = resolution # Resolution to resample images to
-        
+
         self.noise_dimension = 100 # Length of noise seed to be fed into generator
         self.lambda_gp = 10.0 # Regularization parameter
 
