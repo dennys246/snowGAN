@@ -14,7 +14,7 @@ tf.config.optimizer.set_jit(True)  # Use XLA computation for faster runtime oper
 
 class snowGAN:
 
-    def __init__(self, path = "snowgan/", resolution = (1024, 1024), new = False):
+    def __init__(self, path = "./", resolution = (1024, 1024), new = False):
         """
         The abominable snowGAN is a generative adversarial network (GAN) used to train and 
         generate synthetic samples of magnified images of snowpack sampled through out the
