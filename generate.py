@@ -1,5 +1,7 @@
-import os 
-import tensorflow as tf   
+import os, cv2
+import tensorflow as tf  
+from matplotlib import pyplot as plt
+from glob import glob
 
 def generate(self, model, count = 1, seed_size = 100, folder = "./", filename_prefix = 'synthetic', title = "Synthetic Image", subfolder = None):
     """
@@ -82,7 +84,7 @@ def make_movie(self, folder, videoname = "snowgan_synthetics.mp4", framerate = 1
     synthetic_numbers, synthetic_files = zip(*zipper)
     
     # Read the first image to get dimensions
-    image = cv2.imread(batches[0][0])
+    image = cv2.imread(synthetic_files[0])
     height, width, layers = image.shape
 
     # Initialize the video writer

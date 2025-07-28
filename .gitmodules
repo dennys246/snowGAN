@@ -1,0 +1,3 @@
+[submodule "external/snowMaker"]
+	path = external/snowMaker
+	url = https://github.com/dennys246/snowMaker.git

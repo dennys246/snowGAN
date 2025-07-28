@@ -1,4 +1,4 @@
-import os, atexit, argparse, shutil, re, cv2
+import os, atexit, argparse, shutil, re, cv2, train, generate
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt

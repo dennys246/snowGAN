@@ -1,9 +1,11 @@
-import os, generate
+import os, generate, snowgan
 import tensorflow as tf
+from matplotlib import pyplot as plt
+from glob import glob
 
 class trainer:
 
-    def __init__(self, model, dataloader)
+    def __init__(self, model, dataloader):
         self.model = model
         self.dataloader = dataloader
 
