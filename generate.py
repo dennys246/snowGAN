@@ -3,7 +3,7 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 from glob import glob
 
-def generate(self, model, count = 1, seed_size = 100, folder = "./", filename_prefix = 'synthetic', title = "Synthetic Image", subfolder = None):
+def generate(self, model_path = 'default', count = 1, seed_size = 100, folder = "./", filename_prefix = 'synthetic', title = "Synthetic Image", subfolder = None):
     """
     Generate synthetic images using the currently loaded generator and save
     the images to the model's synthetic images folder.
