@@ -1,4 +1,5 @@
-import os, atexit, argparse, shutil, re, cv2, train, generate
+import os, atexit, argparse, shutil, re, cv2
+import train, generate, pipeline
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,9 +11,9 @@ tf.config.optimizer.set_jit(True)  # Use XLA computation for faster runtime oper
 
 class snowGAN:
 
-    def __init__(self, path = "./", resolution = (1024, 1024), new = False):
-        """
-        The abominable snowGAN is a generative adversarial network (GAN) used to train and 
+    def __init__(self, model_path = "keras/", resolution = (1024, 1024), new = False):
+        """ -----------------------The Abominable snowGAN ---------------------
+        The snowGAN is a generative adversarial network (GAN) used to train and 
         generate synthetic samples of magnified images of snowpack sampled through out the
         Rocky Mountains. The specific architecture implemented is Wasserstein GAN with gradient
         penalty (WGAN-GP)leveraging earth movers distance (EMD) as a loss function for the
@@ -30,16 +31,16 @@ class snowGAN:
         """
 
         # Check if model folder rebuilt requested
-        if new and os.path.exists(path):
+        if new and os.path.exists(model_path):
             # Double check with user model is to be rebuilt
             response = input("New model requested, are you sure you would like to delete the current model? (y/n)\n")
             if response == 'y': # Rebuild
-                shutil.rmtree(path)
+                shutil.rmtree(model_path)
             else: # Cancel rebuild
                 print("Model rebuilding canceled, reverting to loading old pre-trained model")
                 new = False
 
-        self.path = path # Handle the model path
+        self.model_dir = model_path # Handle the model path
         if not os.path.exists(self.path):
             os.makedirs(f"{self.path}synthetic_images/", exist_ok = True)
 
@@ -48,8 +49,8 @@ class snowGAN:
         self.gen = _generator(self.resolution)
 
         # Check if model could be loaded
-        if path and new == False:
-            if os.path.exists(f"{self.path}generator.keras"):
+        if model_path and new == False:
+            if os.path.exists(f"{self.model_path}generator.keras"):
                 self.load_model()
 
         # Define training runtime parameters
