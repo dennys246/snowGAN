@@ -1,4 +1,4 @@
-import os, generate, snowgan
+import os, generate, snowgan, pipeline
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from glob import glob
