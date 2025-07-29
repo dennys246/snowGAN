@@ -174,5 +174,5 @@ cython_debug/
 .pypirc
 
 # snowGAN specific exclusions
-model_archive/
-snowgan/
+keras/
+pytorch/
