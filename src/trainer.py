@@ -3,7 +3,7 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 from glob import glob
 
-from generator import generate, make_movie
+from src.generate import generate, make_movie
 
 class Trainer:
 

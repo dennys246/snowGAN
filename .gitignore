@@ -144,7 +144,7 @@ venv.bak/
 .ropeproject
 
 # mkdocs documentation
-/site
+/sit
 
 # mypy
 .mypy_cache/
@@ -174,5 +174,5 @@ cython_debug/
 .pypirc
 
 # snowGAN specific exclusions
-keras/
-pytorch/
+outputs/
+.DS_Store

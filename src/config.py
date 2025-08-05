@@ -1,8 +1,8 @@
-import json, atexit, copy
+import json, atexit, copy, os
 from glob import glob
 
 config_template = {
-            "save_dir": "outputs"
+            "save_dir": "outputs",
             "dataset": "dennys246/rocky_mountain_snowpack",
             "architecture": "generator",
             "resolution": (1024, 1024),
@@ -14,17 +14,18 @@ config_template = {
             "epochs": 10,
             "current_epoch": 0,
             "batch_size": 8,
+            "training_steps": 5,
             "learning_rate": 1e-4,
             "beta_1": 0.5,
             "beta_2": 0.9,
             "alpha": 0.25,
             "latent_dim": 100,
-            "training_steps": 5
             "convolution_depth": 5,
             "filter_counts": [64, 128, 256, 512, 1024],
             "kernel_size": [5, 5],
             "kernel_stride": (2, 2),
-            "final_activation": "tahn"
+            "final_activation": "tahn",
+            "zero_padding": None,
             "padding": "same",
             "optimizer": "adam",
             "loss": None,
@@ -57,7 +58,7 @@ class build:
             config_json = json.load(config_file)
         return config_json
 
-    def configure(self, save_dir, dataset, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, epochs, current_epoch, batch_size, learning_rate, beta_1, beta_2, alpha, latent_dim, convolution_depth, init_filter_count, kernel_size, kernel_stride, zero_padding, padding, pool_size, pool_stride, optimizer, loss, rebuild):
+    def configure(self, save_dir, dataset, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, alpha, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, rebuild):
 		#-------------------------------- Model Set-Up -------------------------------#
         self.save_dir = save_dir
         self.dataset = dataset
@@ -71,26 +72,26 @@ class build:
         self.epochs = epochs
         self.current_epoch = current_epoch
         self.batch_size = batch_size
+        self.training_steps = training_steps,
         self.learning_rate = learning_rate
         self.beta_1 = beta_1
         self.beta_2 = beta_2
         self.alpha = alpha,	
         self.latent_dim,
         self.convolution_depth = convolution_depth
-        self.filter_counts = init_filter_count
+        self.filter_counts = filter_counts
         self.kernel_size = kernel_size
         self.kernel_stride = kernel_stride
+        self.final_activation = final_activation
         self.zero_padding = zero_padding
         self.padding = padding
-        self.pool_size = pool_size
-        self.pool_stride = pool_stride
         self.optimizer = optimizer
         self.loss = loss
         self.rebuild = rebuild
 
     def dump(self):
         config = {
-            "save_dir": self.save_dir
+            "save_dir": self.save_dir,
             "dataset": self.dataset,
             "architecture": self.architecture,
             "resolution": self.resolution,
@@ -102,19 +103,19 @@ class build:
             "epochs": self.epochs,
             "current_epoch": self.current_epoch,
             "batch_size": self.batch_size,
+            "training_steps": self.training_steps,
             "learning_rate": self.learning_rate,
             "beta_1": self.beta_1,
             "beta_2": self.beta_2,
             "alpha": self.alpha,
-            "latent_dim", self.latent_dim
+            "latent_dim": self.latent_dim,
             "convolution_depth": self.convolution_depth,
             "filter_counts": self.filter_counts,
             "kernel_size": self.kernel_size,
             "kernel_stride": self.kernel_stride,
+            "final_activation":self.final_activation,
             "zero_padding": self.zero_padding,
             "padding": self.padding,
-            "pool_size": self.pool_size,
-            "pool_stride": self.pool_stride,
             "optimizer": self.optimizer,
             "loss": self.loss,
             "rebuild": self.rebuild
