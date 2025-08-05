@@ -34,9 +34,10 @@ config_template = {
 
 class build:
     def __init__(self, config_filepath):
+        self.config_filepath = config_filepath
         if os.path.exists(config_filepath): # Try and load config if folder passed in
-            print(f"Loading config file: {config_filepath}")
-            config_json = self.load_config(config_filepath)
+            print(f"Loading config file: {self.config_filepath}")
+            config_json = self.load_config(self.config_filepath)
             config_json['rebuild'] = False # Set to false if able to load a pre-existing model
         else:
             print("WARNING: Config not found, building from template...")
@@ -44,18 +45,28 @@ class build:
 
         self.configure(**config_json) # Build configuration
 
-        atexit.register(self.save_config)
+        atexit(self.save_config)
+
         
     def __repr__(self):
         return '\n'.join([f"{key}: {value}" for key, value in self.__dict__.items()])
     
-    def save_config(self, config_path):
-        with open(config_path, 'w') as config_file:
+    def save_config(self, config_filepath = None):
+        # Save the config filepath if passed in
+        if config_filepath: self.config_filepath = config_filepath
+
+        if os.path.exists(os.path.basename(self.config_filepath)) == False : # Make directory if necessary
+            os.makedirs(os.path.dirname(self.config_filepath), exist_ok=True)
+
+        with open(self.config_filepath, 'w') as config_file:
             json.dump(self.dump(), config_file, indent = 4)
              
     def load_config(self, config_path):
-        with open(config_path, "r") as config_file:
-            config_json = json.load(config_file)
+        if os.path.exists(config_path):
+            with open(config_path, "r") as config_file:
+                config_json = json.load(config_file)
+        else:
+            config_json = config_template
         return config_json
 
     def configure(self, save_dir, dataset, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, alpha, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, rebuild):
@@ -63,7 +74,7 @@ class build:
         self.save_dir = save_dir
         self.dataset = dataset
         self.architecture = architecture
-        self.resolution
+        self.resolution = resolution
         self.images = images
         self.trained_pool = trained_pool
         self.validation_pool = validation_pool
@@ -77,7 +88,7 @@ class build:
         self.beta_1 = beta_1
         self.beta_2 = beta_2
         self.alpha = alpha,	
-        self.latent_dim,
+        self.latent_dim = latent_dim,
         self.convolution_depth = convolution_depth
         self.filter_counts = filter_counts
         self.kernel_size = kernel_size

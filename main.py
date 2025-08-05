@@ -1,4 +1,4 @@
-import argparse, os
+import argparse, os, datasets
 import tensorflow as tf
 from tensorflow.keras.mixed_precision import set_global_policy
 
@@ -11,52 +11,43 @@ import src.config
 
 def configure_device(args):
     gpus = tf.config.list_physical_devices('GPU')
-    if gpus:
-        try:
-            if gpus: # If GPU's available
-                for gpu in gpus: # Set memory growth to prevent TensorFlow from using all memory
-                    tf.config.experimental.set_memory_growth(gpu, True)
-                print(f"Using GPU: {gpus[0].name}")
-            else: # Use only CPU's
-                os.environ["CUDA_VISIBLE_DEVICES"] = "-1" 
-        except RuntimeError as e:
-            print("Failed to set GPU memory growth:", e)
-    else:
-        print("No GPU found. Using CPU.")
+    if gpus: # If GPU's available
+        for gpu in gpus: # Set memory growth to prevent TensorFlow from using all memory
+            tf.config.experimental.set_memory_growth(gpu, True)
+        print(f"Using GPU: {gpus[0].name}")
+    else: # Use only CPU's
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1" 
+        print(f"Updating TF to only use CPU, no GPU found")
     # Configure tensorflow
     if args.xla == True: # Use XLA computation for faster runtime operations
         tf.config.optimizer.set_jit(True)  
 
 def configure_model(args):
     gen_config = src.config.build(f"{args.save_dir}generator_config.json")
-    gen_config['save_dir'] = args.save_dir
-    gen_config['architecture'] = "generator"
-    gen_config['resolution'] = args.resolution
-    gen_config['synthetics'] = args.synthetics
-    gen_config['epochs'] = args.epochs 
-    gen_config['batch_size'] = args.batch_size
-    gen_config['batches'] = args.batches
-    gen_config['learning_rate'] = args.gen_lr
-    gen_config['beta_1'] = args.gen_beta_1
-    gen_config['beta_2'] = args.gen_beta_2
-    gen_config['training_steps'] = args.gen_steps
-    gen_config['filter_counts'] = args.gen_filters
-    gen_config['latent_dim'] = args.latent_dim
+    gen_config.save_dir = args.save_dir
+    gen_config.architecture = "generator"
+    gen_config.resolution = args.resolution
+    gen_config.epochs = args.epochs 
+    gen_config.batch_size = args.batch_size
+    gen_config.learning_rate = args.gen_lr
+    gen_config.beta_1 = args.gen_beta_1
+    gen_config.beta_2 = args.gen_beta_2
+    gen_config.training_steps = args.gen_steps
+    gen_config.filter_counts = args.gen_filters
+    gen_config.latent_dim = args.latent_dim
 
     disc_config = src.config.build(f"{args.save_dir}discriminator_config.json")
-    disc_config['save_dir'] = args.save_dir
-    disc_config['architecture'] = "discriminator"
-    disc_config['resolution'] = args.resolution
-    disc_config['synthetics'] = args.synthetics
-    disc_config['epochs'] = args.epochs 
-    disc_config['batch_size'] = args.batch_size
-    disc_config['batches'] = args.batches
-    disc_config['learning_rate'] = args.disc_lr
-    disc_config['beta_1'] = args.disc_beta_1
-    disc_config['beta_2'] = args.disc_beta_2
-    disc_config['training_steps'] = args.disc_steps
-    disc_config['filter_counts'] = args.disc_filters
-    disc_config['latent_dim'] = args.latent_dim
+    disc_config.save_dir = args.save_dir
+    disc_config.architecture = "discriminator"
+    disc_config.resolution = args.resolution
+    disc_config.epochs = args.epochs 
+    disc_config.batch_size = args.batch_size
+    disc_config.learning_rate = args.disc_lr
+    disc_config.beta_1 = args.disc_beta_1
+    disc_config.beta_2 = args.disc_beta_2
+    disc_config.training_steps = args.disc_steps
+    disc_config.filter_counts = args.disc_filters
+    disc_config.latent_dim = args.latent_dim
 
     return gen_config, disc_config
 
