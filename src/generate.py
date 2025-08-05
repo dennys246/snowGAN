@@ -2,8 +2,9 @@ import os, cv2
 import tensorflow as tf  
 from matplotlib import pyplot as plt
 from glob import glob
+from PIL import Image
 
-def generate(self, model_path = 'default', count = 1, seed_size = 100, folder = "./", filename_prefix = 'synthetic', title = "Synthetic Image", subfolder = None):
+def generate(self, generator, count = 1, seed_size = 100, save_dir = None, filename_prefix = 'synthetic'):
     """
     Generate synthetic images using the currently loaded generator and save
     the images to the model's synthetic images folder.
@@ -12,13 +13,9 @@ def generate(self, model_path = 'default', count = 1, seed_size = 100, folder = 
         model (keras model) - GAN model to generate synthetic images from
         count (int) - Number of synthetic images to create
         seed_size (size) - Size of the input noise seed to the generator
-        folder (str) - Folder path where you would like to store generated images
+        save_dir (str) - Folder path to save images, if none provided images are
         filename_prefix (str) - prefix to give the filename
-        title (str) - Title to give the synthetically generated images
-        subfolder (str) - Child folder to build and save synthetic images to
     """
-    if subfolder: # If subfolder requested
-        folder += subfolder # Add subfolder to path
 
     # Check if the destimation exists
     previously_generated = 0
@@ -34,30 +31,38 @@ def generate(self, model_path = 'default', count = 1, seed_size = 100, folder = 
     seed = tf.random.normal([count, ])
 
     # Generate synthetic images
-    synthetic_images = model(seed, training=False)
+    synthetic_images = generator(seed, training=False)
     print(f"Synthetic images generated: {synthetic_images.shape}")
     
     # Iterate through each synthetic image
     for ind in range(synthetic_images.shape[0]):
         
         # Construct image filename
-        filename = f"{folder}{filename_prefix}_{previously_generated + ind + 1}.png"
+        filepath = f"{folder}{filename_prefix}_{previously_generated + ind + 1}.png"
 
         # Reformat generated image to RGB from BGR
-        image = synthetic_images[ind].numpy()
-        print(f"Image (prior) shape {image.shape} | max {image.max()} | deviation {image.std()}")
-        image = np.clip((image + 1) * 127.5, 0, 255).astype(np.uint8)
-        print(f"Image (prior) shape {image.shape} | max {image.max()} | deviation {image.std()}")
+        image_arr = synthetic_images[ind].numpy()
+        print(f"Image (prior) shape {image_arr.shape} | max {image_arr.max()} | deviation {image_arr.std()}")
+        image_arr = np.clip((image_arr + 1) * 127.5, 0, 255).astype(np.uint8)
+        print(f"Image (prior) shape {image_arr.shape} | max {image_arr.max()} | deviation {image_arr.std()}")
+
+        # Convert to PIL image
+        image = Image.fromarray(image_arr)
 
         # Save image with parameters provided
-        plt.imshow(image)
-        plt.title(title)
-        plt.axis('off')
-        plt.savefig(filename)
-        plt.close()
+        save_image(image, filepath)
+    
     return synthetic_images
 
-def make_movie(self, folder, videoname = "snowgan_synthetics.mp4", framerate = 15, filepath_pattern = "*.png"):
+def save_image(image, filepath):
+    # Ensure output dir exists
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Convert to image and save
+    image.save(filepath)
+    print(f"Saved image to {filepath}")
+
+def make_movie(self, save_dir = "outputs", videoname = "snowgan_synthetics.mp4", framerate = 15, filepath_pattern = "*.png"):
     """
     Create a .mp4 movie of the batch history of synthetic images generated to 
     display the progression of what features the snowGAN generator (and presumably 
