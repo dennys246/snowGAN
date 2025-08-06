@@ -7,36 +7,36 @@ from src.generate import generate, make_movie
 
 class Trainer:
 
-    def __init__(self, save_dir, generator, discriminator, gen_config, disc_config, dataset):
-
-        self.save_dir = save_dir # Save dictory for the model and it's generated images
-
-        self.batch_size = gen_config['batch_size'] # Number of images to load in per training batch
-
-        self.synthetics = gen_config['synthetics'] # Number of synthetic images to generate after training
+    def __init__(self, generator, discriminator, dataset):
 
         # Generator and discriminator models
         self.gen = generator
         self.disc = discriminator
 
+        self.save_dir = self.gen.config.save_dir # Save dictory for the model and it's generated images
+
+        self.batch_size = self.gen.config.batch_size # Number of images to load in per training batch
+
+        self.synthetics = self.gen.config.synthetics # Number of synthetic images to generate after training
+
             # Setup optimizers from config or defaults
-        self.gen_optimizer = tf.keras.optimizers.Adam(learning_rate=gen_config.get("gen_lr", 1e-4),
-                                        beta_1=gen_config.get("gen_beta1", 0.5),
-                                        beta_2=gen_config.get("gen_beta2", 0.9))
+        self.gen_optimizer = tf.keras.optimizers.Adam(learning_rate=self.gen.config.learning_rate,
+                                        beta_1 = self.gen.config.beta_1,
+                                        beta_2 = self.gen.config.beta_2)
         
-        self.disc_optimizer = tf.keras.optimizers.Adam(learning_rate=disc_config.get("disc_lr", 1e-5),
-                                            beta_1=disc_config.get("disc_beta1", 0.5),
-                                            beta_2=disc_config.get("disc_beta2", 0.9))
+        self.disc_optimizer = tf.keras.optimizers.Adam(learning_rate = self.disc.config.learning_rate,
+                                            beta_1 = self.disc.config.beta_1,
+                                            beta_2 = self.disc.config.beta_2)
 
         self.dataset = dataset
-        self.train_ind = 0
+        self.train_ind = self.gen.config.train_ind
         self.trained_data = []
 
         self.loss = {'disc': [], 'gen': []}
 
         self.load_history() # Load any history we can find in save directory
 
-        atexit(self.save_model)
+        atexit.register(self.save_model)
 
     def prepare_batch(self, datatype, batch_size):
         count = 0
@@ -68,6 +68,7 @@ class Trainer:
 
             if self.train_ind >= len(self.dataset['train']):
                 self.train_ind = 0
+                self.trained_data = []
 
         if len(batch) > 0:
             return np.stack(batch)
@@ -188,11 +189,10 @@ class Trainer:
         # Log and plot final history
         self.log_history()
         self.plot_history()
-        self.log_training()
         
         # Save generator and discriminator as .keras files
-        self.model.gen.model.save(f"{path}/generator.keras")
-        self.model.disc.model.save(f"{path}/discriminator.keras")
+        self.gen.model.save(f"{path}/generator.keras")
+        self.disc.model.save(f"{path}/discriminator.keras")
         print(f"Models saved in {path}...")
 
     def load_model(self, path = None):
