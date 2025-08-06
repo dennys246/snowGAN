@@ -32,6 +32,7 @@ def configure_model(args):
     gen_config.learning_rate = args.gen_lr
     gen_config.beta_1 = args.gen_beta_1
     gen_config.beta_2 = args.gen_beta_2
+    gen_config.alpha = args.gen_alpha
     gen_config.training_steps = args.gen_steps
     gen_config.filter_counts = args.gen_filters
     gen_config.latent_dim = args.latent_dim
@@ -45,15 +46,15 @@ def configure_model(args):
     disc_config.learning_rate = args.disc_lr
     disc_config.beta_1 = args.disc_beta_1
     disc_config.beta_2 = args.disc_beta_2
+    disc_config.alpha = args.disc_alpha
     disc_config.training_steps = args.disc_steps
     disc_config.filter_counts = args.disc_filters
     disc_config.latent_dim = args.latent_dim
 
     return gen_config, disc_config
 
-def load_dataset(batch_size, image_size):
-    dataset = datasets.load_dataset("rmdig/rocky_mountain_snowpack")
-    return dataset
+def load_dataset():
+    return datasets.load_dataset("rmdig/rocky_mountain_snowpack")
 
 def main():
 
@@ -71,14 +72,16 @@ def main():
     parser.add_argument('--gen_lr', type = float, default = 1e-4, help = 'Generators optimizer learning rate (Defaults to 0.001)')
     parser.add_argument('--gen_beta_1', type = float, default = 0.5, help = 'Generators optimizer adam beta one (Defaults to 0.5)')
     parser.add_argument('--gen_beta_2', type = float, default = 0.9, help = 'Generators optimizer adam beta two (Defaults to 0.9)')
+    parser.add_argument('--gen_alpha', type = float, default = 0.25, help = 'Generators negative slope for leaky relu (Defaults to 0.25)')
     parser.add_argument('--gen_steps', type = int, default = 5, help = 'Training steps the generator takes per batch (Defaults to 5)')
     parser.add_argument('--gen_filters', type = list, default = [1024, 512, 256, 128, 64], help = 'Generators filters per convolution layer (Defaults to [1024, 512, 256, 128, 64])')
     parser.add_argument('--disc_lr', type = float, default = 1e-5, help = 'Discriminators learning rate (Defaults to 0.0001)')
     parser.add_argument('--disc_beta_1', type = float, default = 0.5, help = 'Discriminators adam beta one (Defaults to 0.5)')
     parser.add_argument('--disc_beta_2', type = float, default = 0.9, help = 'Discriminators dam beta two (Defaults to 0.9)')
+    parser.add_argument('--disc_alpha', type = float, default = 0.25, help = 'Discriminators negative slope for leaky relu (Defaults to 0.25)')
     parser.add_argument('--disc_steps', type = int, default = 1, help = 'Steps the discriminator takes per batch (Defaults to 1)')
     parser.add_argument('--disc_filters', type = list, default = [64, 128, 256, 512, 1024], help = 'Discriminator filters per convolution layer (Defaults to [64, 128, 256, 512, 1024])')
-    parser.add_argument('--latent_dim', type = float, default = 10.0, help = 'Latent dimension hyperparameter (Defaults to 10.0)')
+    parser.add_argument('--latent_dim', type = float, default = 100, help = 'Latent dimension size (Defaults to 100)')
     parser.add_argument('--new', type = bool, default = False, help = 'Whether to rebuild model from scratch (defaults to False)')
     parser.add_argument('--xla', type = bool, default = False, help = 'Whether to use accelerated linear algebra (XLA) (defaults to False)')
 
@@ -90,7 +93,7 @@ def main():
     gen_config, disc_config = configure_model(args)
 
     if args.mode == "train":
-        dataset = load_dataset(gen_config)
+        dataset = load_dataset()
 
         generator = Generator(gen_config)
         discriminator = Discriminator(disc_config)
