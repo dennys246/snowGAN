@@ -11,7 +11,7 @@ class Generator(tf.keras.Model):
         """
         
         super(Generator, self).__init__()
-        self.config
+        self.config = config
 
         # Check if default config, and reverse if so
         if self.config.filter_counts[0] < self.config.filter_counts[-1]:
@@ -33,7 +33,7 @@ class Generator(tf.keras.Model):
             x = tf.keras.layers.BatchNormalization()(x)
             x = tf.keras.layers.LeakyReLU()(x)
 
-        outputs = tf.keras.layers.Conv2DTranspose(3, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding, activation = config.final_activation, use_bias = False)(x)
+        outputs = tf.keras.layers.Conv2DTranspose(3, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding, activation = self.config.final_activation, use_bias = False)(x)
 
         return tf.keras.Model(inputs, outputs, name = "Generator")
 

@@ -31,5 +31,5 @@ class Discriminator(tf.keras.Model):
         return tf.keras.Model(inputs, outputs, name="Discriminator")
 
     def get_optimizer(self):
-        return tf.keras.optimizers.Adam(learning_rate = config.learning_rate, beta_1 = config.beta_1, beta_2 = config.beta_2)
+        return tf.keras.optimizers.Adam(learning_rate = self.config.learning_rate, beta_1 = self.config.beta_1, beta_2 = self.config.beta_2)
 
