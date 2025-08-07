@@ -1,8 +1,10 @@
 import os, atexit
 import tensorflow as tf
+import numpy as np
 from matplotlib import pyplot as plt
 from glob import glob
 
+from src.losses import compute_gradient_penalty
 from src.generate import generate, make_movie
 
 class Trainer:
@@ -42,9 +44,15 @@ class Trainer:
         count = 0
         batch = []
 
-        if datatype not in ['magnified_profile', 'profile', 'core']:
-            print(f"ERROR: The datatype {datatype} passed in is an available datatype (i.e. 'magnified_profile', 'profile', 'core')")
-            return None
+        translator = {
+            'core': 0,
+            'profile': 1,
+            'magnified_profile': 2,
+            'crystal_card': 3
+        }
+
+        datatype = translator[datatype]
+
         
         while count < batch_size and self.train_ind < len(self.dataset['train']):
             sample = self.dataset['train'][self.train_ind]
@@ -56,7 +64,7 @@ class Trainer:
                 if not isinstance(image, tf.Tensor):
                     image = tf.convert_to_tensor(np.array(image))  # Convert from PIL to tensor
                 
-                image = tf.image.resize(image, self.gen_config.get('resolution', (512, 512)))
+                image = tf.image.resize(image, self.gen.config.resolution)
                 
                 image = tf.cast(image, tf.float32) / 127.5 - 1.0
                 
@@ -66,10 +74,6 @@ class Trainer:
 
             self.train_ind += 1
 
-            if self.train_ind >= len(self.dataset['train']):
-                self.train_ind = 0
-                self.trained_data = []
-
         if len(batch) > 0:
             return np.stack(batch)
         
@@ -78,7 +82,7 @@ class Trainer:
             return None
 
 
-    def train(self, batches = None, batch_size = 8, epochs = None):
+    def train(self, batches = None, batch_size = 8, epochs = 1):
         """
         Initializes training the discriminator and generator based on requested
         runtime behavioral. The model is saved after every training batch to preserve
@@ -93,32 +97,37 @@ class Trainer:
         # Update hyperparameters if passed in before training
         if not batches: batches = int(round(len(self.dataset['train'])/batch_size, 0))
         if batch_size: self.batch_size = batch_size
-        if epochs: self.epochs = epochs
-
-        trainable_data = True
 
         # Iterate through requested training batches 
-        while trainable_data:
-            # Figure out batch start and end
+        for epoch in range(epochs):
+            batch = 1
+            trainable_data = True
+            while trainable_data:
+                # Figure out batch start and end
 
-            x = self.prepare_batch('magnified_profile', batch_size) # Load a new batch of subjects
+                x = self.prepare_batch('magnified_profile', batch_size) # Load a new batch of subjects
+                if x is None:
+                    print(f"Training Epoch Complete")
+                    trainable_data = False
 
-            print(f"Training on batch {batch + 1}...")
-            for epoch in range(self.epochs): # Iterate through each requested epoch
+                print(f"Training on batch {batch}...")
+
                 self.train_step(x) # Train on batch of images
-                print(f'Epoch {epoch + 1} | Generator loss: {round(float(self.loss['gen'][-1]), 3)} | Discrimintator loss: {round(float(self.loss['disc'][-1]), 3)} |')
+                print(f'Epoch {epoch} | Batch {batch} | Generator loss: {round(float(self.loss['gen'][-1]), 3)} | Discrimintator loss: {round(float(self.loss['disc'][-1]), 3)} |')
                 
                 self.plot_history() # Update history with progress
-            
-            # Generate synthetic images to the batch folder to track progress
-            if self.synthetics:
-                _ = generate(self.gen, count = self.synthetics, seed_size = self.gen_config.get('latent_dim', 100), save_dir = f"{self.save_dir}/synthetic_images/", filename_prefix = f'batch_{batch}_synthetic')
-            
-            # Save the models state
-            if batch % 10 == 0:
-                self.save_model(f"{self.save_dir}/synthetic_images/batch_{batch}") # Need to consider more dynamic way to do this and remove old history
+                
+                # Generate synthetic images to the batch folder to track progress
+                if self.synthetics:
+                    _ = generate(self.gen, count = self.synthetics, seed_size = self.gen.config.latent_dim, save_dir = f"{self.save_dir}/synthetic_images/", filename_prefix = f'batch_{batch}_synthetic')
+                
+                # Save the models state
+                if batch % 10 == 0:
+                    self.save_model(f"{self.save_dir}/synthetic_images/batch_{batch}") # Need to consider more dynamic way to do this and remove old history
+                
+                batch += 1
 
-    def train_step(self, images, disc_steps = 1, gen_steps = 3):
+    def train_step(self, images, disc_steps = None, gen_steps = None):
         """
         This function trains the snowGAN on the passed in images, with variables 
         training length of the discriminator and generator. This function implements
@@ -129,13 +138,22 @@ class Trainer:
             disc_steps (int) - Number N of training steps for the discriminator per epoch
             gen_steps (int) - Number M of training steps for the generator per epoch
         """
+        # Update training parameters if passed in
+        if disc_steps:
+            self.disc.config.training_steps = disc_steps
+        if gen_steps:
+            self.gen.config.training_steps = gen_steps
+
         # Set batch size to the number of images passed in
         batch_size = tf.shape(images)[0] 
+
         # Generate noise for generator input
-        noise = tf.random.normal([batch_size, self.noise_dimension]) 
+        noise = tf.random.normal([batch_size, self.gen.config.latent_dim])
+
         # Train the discriminator N times
-        for _ in range(disc_steps): 
-            with tf.GradientTape() as tape: # Initialize automatic differentiation during forward propogation
+        for _ in range(self.disc.config.training_steps): 
+            # Initialize automatic differentiation during forward propogation
+            with tf.GradientTape() as tape: 
                 # Generate a synthetic sample via forward propogation in the generator
                 synthetic_images = self.gen.model(noise, training=True) 
 
@@ -144,10 +162,10 @@ class Trainer:
                 synthetic_output = self.disc.model(synthetic_images, training=True)
 
                 # Calculate discriminators gradient penalty
-                gp = self.disc.compute_gp(images, synthetic_images)
+                gp = compute_gradient_penalty(self.disc, images, synthetic_images, self.disc.config.lambda_gp)
 
                 # Calculate EMD/loss for the discriminators outputs
-                disc_loss = self.disc.loss(output, synthetic_output, gp, self.lambda_gp)
+                disc_loss = self.disc.get_loss(output, synthetic_output, gp, self.disc.config.lambda_gp)
             
             # Backpropogate by calculating gradient 
             disc_gradients = tape.gradient(disc_loss, self.disc.model.trainable_variables)
@@ -155,9 +173,9 @@ class Trainer:
             self.disc.optimizer.apply_gradients(zip(disc_gradients, self.disc.model.trainable_variables))
 
         # Train the generator M times
-        for _ in range(gen_steps):
+        for _ in range(self.gen.config.training_steps):
             # Generate random noise to pass into the generator
-            noise = tf.random.normal([batch_size, self.noise_dimension])
+            noise = tf.random.normal([batch_size, self.gen.config.latent_dim])
             # Initialize automtic differentiation during forward propogation
             with tf.GradientTape() as tape:
                 # Forward pass noise through the generator to create synthetic images
@@ -165,7 +183,7 @@ class Trainer:
                 # Forward pass generator outputs through the discriminator for loss calculation
                 synthetic_output = self.disc.model(synthetic_images, training=True)
                 # Calculate generator loss for backpropogation by calculating mean of disc output
-                gen_loss = self.gen.loss(synthetic_output)
+                gen_loss = self.gen.get_loss(synthetic_output)
             # Backpropogate to calculate gradient of trainable parameters given loss
             gen_gradients = tape.gradient(gen_loss, self.gen.model.trainable_variables)
             # Apply the gradients and update trainable parameters (w, b, etc.)
@@ -215,6 +233,8 @@ class Trainer:
         """
         Plot and save the generator and discriminator history loaded in the snowGAN object
         """
+        # Make directories that don't exists
+        os.makedirs(self.save_dir)
 
         # Save the current generate loss progress
         with open(f"{self.save_dir}generator_loss.txt", "w") as file:
