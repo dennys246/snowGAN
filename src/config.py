@@ -19,7 +19,8 @@ config_template = {
             "learning_rate": 1e-4,
             "beta_1": 0.5,
             "beta_2": 0.9,
-            "alpha": 0.25,
+            "negative_slope": 0.25,
+            "lambda_gp": None,
             "latent_dim": 100,
             "convolution_depth": 5,
             "filter_counts": [64, 128, 256, 512, 1024],
@@ -72,7 +73,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, dataset, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, synthetics, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, alpha, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
+    def configure(self, save_dir, dataset, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, synthetics, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
 		#-------------------------------- Model Set-Up -------------------------------#
         self.save_dir = save_dir
         self.dataset = dataset
@@ -91,7 +92,8 @@ class build:
         self.learning_rate = learning_rate
         self.beta_1 = beta_1
         self.beta_2 = beta_2
-        self.alpha = alpha
+        self.negative_slope = negative_slope
+        self.lambda_gp = lambda_gp
         self.latent_dim = latent_dim
         self.convolution_depth = convolution_depth
         self.filter_counts = filter_counts
@@ -125,7 +127,8 @@ class build:
             "learning_rate": self.learning_rate,
             "beta_1": self.beta_1,
             "beta_2": self.beta_2,
-            "alpha": self.alpha,
+            "negative_slope": self.negative_slope,
+            "lambda_gp": self.lambda_gp,
             "latent_dim": self.latent_dim,
             "convolution_depth": self.convolution_depth,
             "filter_counts": self.filter_counts,
