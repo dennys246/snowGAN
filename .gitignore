@@ -176,3 +176,5 @@ cython_debug/
 # snowGAN specific exclusions
 outputs/
 .DS_Store
+keras/
+pytorch/

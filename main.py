@@ -46,8 +46,8 @@ def configure_model(args):
 
     return gen_config, disc_config
 
-def load_dataset():
-    return datasets.load_dataset("D:/Datasets/rocky_mountain_snowpack")
+def load_dataset(dataset_dir):
+    return datasets.load_dataset(dataset_dir)
 
 def main():
 
@@ -56,7 +56,8 @@ def main():
 
     # Add command-line arguments
     parser.add_argument('--mode', type = str, choices = ["train", "generate"], required = True, help = "Mode to run the model in, either generate fake data or train the model")
-    parser.add_argument('--save_dir', type = str, default = "outputs/", help = "Path to a pre-trained model or directory to save results (defaults to outputs/)")
+    parser.add_argument('--dataset_dir', type = str, default = 'rmdig/rocky_mountain_snowpack', help = "Path to the Rocky Mountain Snowpack dataset, if none provided it will download directly from HF remote repository")
+    parser.add_argument('--save_dir', type = str, default = "keras/snowgan/", help = "Path to save results where a pre-trained model may be found (defaults to keras/snowgan/)")
     parser.add_argument('--resolution', type = set, default = (1024, 1024), help = 'Resolution to downsample images too (Default set to (1024, 1024))')
     parser.add_argument('--synthetics', type = int, default = 10, help = "Number of synthetic images to generate (defaults to 10)")
     parser.add_argument('--batches', type = int, default = None, help = 'Number of batches to run (Default to max available)')
@@ -87,7 +88,7 @@ def main():
     gen_config, disc_config = configure_model(args)
 
     if args.mode == "train":
-        dataset = load_dataset()
+        dataset = load_dataset(args.dataset_dir)
 
         generator = Generator(gen_config)
         discriminator = Discriminator(disc_config)

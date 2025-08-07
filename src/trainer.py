@@ -52,7 +52,6 @@ class Trainer:
         }
 
         datatype = translator[datatype]
-
         
         while count < batch_size and self.train_ind < len(self.dataset['train']):
             sample = self.dataset['train'][self.train_ind]
@@ -123,7 +122,7 @@ class Trainer:
                 
                 # Save the models state
                 if batch % 10 == 0:
-                    self.save_model(f"{self.save_dir}/synthetic_images/batch_{batch}") # Need to consider more dynamic way to do this and remove old history
+                    self.save_model(f"{self.save_dir}/synthetic_images/batch_{batch}/") # Need to consider more dynamic way to do this and remove old history
                 
                 batch += 1
 
@@ -203,6 +202,8 @@ class Trainer:
         # Update path if none passed in
         if path == None:
             path = self.save_dir
+        
+        os.makedirs(path, exist_ok = True)
 
         # Log and plot final history
         self.log_history()
@@ -234,7 +235,7 @@ class Trainer:
         Plot and save the generator and discriminator history loaded in the snowGAN object
         """
         # Make directories that don't exists
-        os.makedirs(self.save_dir)
+        os.makedirs(self.save_dir, exist_ok = True)
 
         # Save the current generate loss progress
         with open(f"{self.save_dir}generator_loss.txt", "w") as file:
