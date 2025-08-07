@@ -18,6 +18,7 @@ class Generator(tf.keras.Model):
             self.config.filter_counts = self.config.filter_counts[::-1]
 
         self.model = self._build_model()
+        self.optimizer = self.get_optimizer()
 
     def call(self, inputs, training=False):
         return self.model(inputs, training=training)
@@ -40,3 +41,14 @@ class Generator(tf.keras.Model):
     def get_optimizer(self, lr = 1e-4, beta_1 = 0.5, beta_2 = 0.9):
         return tf.keras.optimizers.Adam(learning_rate = lr, beta_1 = beta_1, beta_2 = beta_2)
 
+    def get_loss(self, synthetic_difference):
+        """
+        Generator loss for Wasserstein GAN loss
+
+        Args:
+            synthetic_output (tf.Tensor): Discriminator output for fake images
+
+        Returns:
+            tf.Tensor: Generator loss
+        """
+        return -tf.reduce_mean(synthetic_difference)
