@@ -10,7 +10,6 @@ class Discriminator(tf.keras.Model):
         """
         super(Discriminator, self).__init__()
         self.config = config
-        self.config.lambda_gp = 10.0
 
         self.resolution = self.config.resolution
         self.model = self._build_model()
