@@ -65,7 +65,7 @@ class Trainer:
                 
                 image = tf.image.resize(image, self.gen.config.resolution)
                 
-                image = tf.cast(image, tf.float32) / 127.5 - 1.0
+                image = (tf.cast(image, tf.float32) / 127.5) - 1.0
                 
                 batch.append(image)
 

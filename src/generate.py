@@ -40,11 +40,8 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
         # Construct image filename
         filepath = f"{save_dir}{filename_prefix}_{previously_generated + ind + 1}.png"
 
-        # Reformat generated image to RGB from BGR
         image_arr = synthetic_images[ind].numpy()
-        print(f"Image (prior) shape {image_arr.shape} | max {image_arr.max()} | deviation {image_arr.std()}")
         image_arr = np.clip((image_arr + 1) * 127.5, 0, 255).astype(np.uint8)
-        print(f"Image (prior) shape {image_arr.shape} | max {image_arr.max()} | deviation {image_arr.std()}")
 
         # Convert to PIL image
         image = Image.fromarray(image_arr)
@@ -52,7 +49,7 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
         # Save image with parameters provided
         save_image(image, filepath)
     
-    return synthetic_images
+    return np.stack(synthetic_images)
 
 def save_image(image, filepath):
     # Ensure output dir exists
