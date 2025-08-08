@@ -26,13 +26,13 @@ class Generator(tf.keras.Model):
     def _build_model(self):
         inputs = tf.keras.Input(shape=(self.config.latent_dim,))
 
-        x = tf.keras.layers.Dense(16 * 16 * self.config.resolution[0], use_bias = False)(inputs)
-        x = tf.keras.layers.Reshape((16, 16, self.config.resolution[0]))(x)
+        x = tf.keras.layers.Dense(16 * 16 * self.config.filter_counts[0], use_bias = False)(inputs)
+        x = tf.keras.layers.Reshape((16, 16, self.config.filter_counts[0]))(x)
 
         for filters in self.config.filter_counts:
             x = tf.keras.layers.Conv2DTranspose(filters, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding)(x)
-            x = tf.keras.layers.BatchNormalization()(x)
-            x = tf.keras.layers.LeakyReLU()(x)
+            #x = tf.keras.layers.BatchNormalization()(x)
+            x = tf.keras.layers.LeakyReLU(self.config.negative_slope)(x)
 
         outputs = tf.keras.layers.Conv2DTranspose(3, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding, activation = self.config.final_activation, use_bias = False)(x)
 
