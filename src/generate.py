@@ -41,7 +41,10 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
         filepath = f"{save_dir}{filename_prefix}_{previously_generated + ind + 1}.png"
 
         image_arr = synthetic_images[ind].numpy()
-        image_arr = np.clip((image_arr + 1) * 127.5, 0, 255).astype(np.uint8)
+        image_arr = (image_arr + 1.0) * 127.5
+        print(f"Generated shape: {image_arr.shape} | Max {image_arr.min()} | Min {image_arr.min()} | Std {image_arr.std()} |")
+        image_arr = np.clip(image_arr, 0, 255).astype(np.uint8)
+        print(f"Generated shape (Post clipping): {image_arr.shape} | Max {image_arr.min()} | Min {image_arr.min()} | Std {image_arr.std()} |")
 
         # Convert to PIL image
         image = Image.fromarray(image_arr)
