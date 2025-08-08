@@ -8,7 +8,6 @@ from src.trainer import Trainer
 from src.generate import generate, make_movie
 import src.config
 
-
 def configure_device(args):
     # Configure tensorflow
     if args.xla == True: # Use XLA computation for faster runtime operations
