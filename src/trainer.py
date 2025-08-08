@@ -64,10 +64,12 @@ class Trainer:
                     image = tf.convert_to_tensor(np.array(image))  # Convert from PIL to tensor
                 
                 image = tf.image.resize(image, self.gen.config.resolution)
+                print(f"Max - {tf.reduce_max(image).numpy()} | Min {tf.reduce_min(image).numpy()} ")
                 
-                image = (tf.cast(image, tf.float32) / 127.5) - 1.0
                 
-                batch.append(image)
+                scaled_image = (tf.cast(image, tf.float32) / 127.5) - 1.0
+
+                batch.append(scaled_image)
 
                 count += 1
 
@@ -97,14 +99,13 @@ class Trainer:
         if not batches: batches = int(round(len(self.dataset['train'])/batch_size, 0))
         if batch_size: self.batch_size = batch_size
 
-        # Iterate through requested training batches 
+        # Iterate through requested training batches
         for epoch in range(epochs):
             batch = 1
             trainable_data = True
             while trainable_data:
-                # Figure out batch start and end
-
-                x = self.prepare_batch('magnified_profile', batch_size) # Load a new batch of subjects
+                # Load a new batch of subjects
+                x = self.prepare_batch('magnified_profile', batch_size) 
                 if x is None:
                     print(f"Training Epoch Complete")
                     trainable_data = False
@@ -284,6 +285,9 @@ class Trainer:
 
 
     def plot_history(self):
+        # Check if save folder exists yet
+        if os.path.exists(self.save_dir) == False:
+            os.makedirs(self.save_dir, exist_ok = True)
         # Plot the generator and discriminator loss history
         plt.plot(self.loss['gen'], label = 'Generator loss')
         plt.plot(self.loss['disc'], label = 'Discriminator loss')
@@ -291,7 +295,7 @@ class Trainer:
         plt.legend()
         plt.ylabel("Loss")
         plt.xlabel("Epochs")
-        plt.savefig(f'{self.save_dir}history.png')
+        plt.savefig(os.path.join(self.save_dir, 'history.png'))
         plt.close()
 
 
