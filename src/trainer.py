@@ -4,7 +4,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from glob import glob
 
-from src.losses import compute_gradient_penalty
+from utils import compute_gradient_penalty
 from src.generate import generate, make_movie
 
 class Trainer:
@@ -65,7 +65,6 @@ class Trainer:
                 
                 image = tf.image.resize(image, self.gen.config.resolution)
                 print(f"Max - {tf.reduce_max(image).numpy()} | Min {tf.reduce_min(image).numpy()} ")
-                
                 
                 scaled_image = (tf.cast(image, tf.float32) / 127.5) - 1.0
 
