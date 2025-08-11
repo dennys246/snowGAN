@@ -4,7 +4,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from glob import glob
 
-from utils import compute_gradient_penalty
+from src.losses import compute_gradient_penalty
 from src.generate import generate, make_movie
 
 class Trainer:
@@ -112,7 +112,7 @@ class Trainer:
                 print(f"Training on batch {batch}...")
 
                 self.train_step(x) # Train on batch of images
-                print(f'Epoch {epoch} | Batch {batch} | Generator loss: {round(float(self.loss['gen'][-1]), 3)} | Discrimintator loss: {round(float(self.loss['disc'][-1]), 3)} |')
+                print(f'Epoch {epoch} | Batch {batch} | Generator loss: {round(float(self.loss["gen"][-1]), 3)} | Discrimintator loss: {round(float(self.loss["disc"][-1]), 3)} |')
                 
                 self.plot_history() # Update history with progress
                 

@@ -10,6 +10,7 @@ import src.config
 
 def configure_device(args):
     # Configure tensorflow
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     if args.xla == True: # Use XLA computation for faster runtime operations
         tf.config.optimizer.set_jit(True)  
 
@@ -20,6 +21,8 @@ def configure_model(args):
     gen_config.resolution = args.resolution
     gen_config.epochs = args.epochs 
     gen_config.batch_size = args.batch_size
+    gen_config.kernel_size = args.gen_kernel
+    gen_config.kernel_stride = args.gen_stride
     gen_config.learning_rate = args.gen_lr
     gen_config.beta_1 = args.gen_beta_1
     gen_config.beta_2 = args.gen_beta_2
@@ -34,6 +37,8 @@ def configure_model(args):
     disc_config.resolution = args.resolution
     disc_config.epochs = args.epochs 
     disc_config.batch_size = args.batch_size
+    disc_config.kernel_size = args.disc_kernel
+    disc_config.kernel_stride = args.disc_stride
     disc_config.learning_rate = args.disc_lr
     disc_config.beta_1 = args.disc_beta_1
     disc_config.beta_2 = args.disc_beta_2
@@ -62,12 +67,16 @@ def main():
     parser.add_argument('--batches', type = int, default = None, help = 'Number of batches to run (Default to max available)')
     parser.add_argument('--batch_size', type = int, default = 8, help = 'Batch size (Defaults to 8)')
     parser.add_argument('--epochs', type = int, default = 10, help = 'Epochs to train on (Defaults to 10)')
+    parser.add_argument('--gen_kernel', type = list, default = [10, 10], help = 'Generator kernel size (Defaults to [5, 5])')
+    parser.add_argument('--gen_stride', type = list, default = [2, 2], help = 'Generator kernel stride (Defaults to [2, 2])')
     parser.add_argument('--gen_lr', type = float, default = 1e-3, help = 'Generators optimizer learning rate (Defaults to 0.001)')
     parser.add_argument('--gen_beta_1', type = float, default = 0.5, help = 'Generators optimizer adam beta one (Defaults to 0.5)')
     parser.add_argument('--gen_beta_2', type = float, default = 0.9, help = 'Generators optimizer adam beta two (Defaults to 0.9)')
     parser.add_argument('--gen_negative_slope', type = float, default = 0.25, help = 'Generators negative slope for leaky relu (Defaults to 0.25)')
     parser.add_argument('--gen_steps', type = int, default = 3, help = 'Training steps the generator takes per batch (Defaults to 5)')
     parser.add_argument('--gen_filters', type = list, default = [1024, 512, 256, 128, 64], help = 'Generators filters per convolution layer (Defaults to [1024, 512, 256, 128, 64])')
+    parser.add_argument('--disc_kernel', type = list, default = [10, 10], help = 'Discriminator kernel size (Defaults to [5, 5])')
+    parser.add_argument('--disc_stride', type = list, default = [2, 2], help = 'Discriminator kernel stride (Defaults to [2, 2])')
     parser.add_argument('--disc_lr', type = float, default = 1e-4, help = 'Discriminators learning rate (Defaults to 0.0001)')
     parser.add_argument('--disc_beta_1', type = float, default = 0.5, help = 'Discriminators adam beta one (Defaults to 0.5)')
     parser.add_argument('--disc_beta_2', type = float, default = 0.9, help = 'Discriminators dam beta two (Defaults to 0.9)')
