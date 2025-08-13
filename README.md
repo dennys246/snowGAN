@@ -50,19 +50,7 @@ This is an actively evolving project, with only 1/2 of the dataset being utilize
 
 ## How to Use
 
-```python
-import torch
-from model import Generator
-
-# Figure out if GPU with CUDAs are available, else set ot CPU
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-# Load the snowGAN
-gen = Generator().to(device)
-gen.load_state_dict(torch.load("model.pth", map_location=device))
-gen.eval()
-
-z = torch.randn(1, 100, 1, 1)
-image = gen(z)
+```bash
+python3 main.py --mode train --gen_steps 4 --disc_lr 0.0001
+python3 main.py --mode generate --synthetics 10
 ```
