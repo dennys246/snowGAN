@@ -13,7 +13,18 @@ class Trainer:
 
         # Generator and discriminator models
         self.gen = generator
+        if os.path.exists(f"{self.gen.config.save_dir}/generator.keras"):
+            self.gen.model.load_weights(f"{self.gen.config.save_dir}/generator.keras")
+            print("Generator weights loaded successfully")
+        else:
+            print("Generator saved weights not found, new model initialized")
+
         self.disc = discriminator
+        if os.path.exists(f"{self.disc.config.save_dir}/discriminator.keras"):
+            self.disc.model.load_weights(f"{self.disc.config.save_dir}/discriminator.keras")
+            print("Discriminator weights loaded successfully")
+        else:
+            print("Disciminator saved weights not found, new model initialized")
 
         self.save_dir = self.gen.config.save_dir # Save dictory for the model and it's generated images
 
@@ -101,6 +112,13 @@ class Trainer:
         # Iterate through requested training batches
         for epoch in range(epochs):
             batch = 1
+
+            batched_images = glob(f"{self.gen.config.save_dir}/synthetic_images/*batch*.png")
+            for batch_image in batched_images:
+                batch_number = int(batch_image.split('batch_')[1].split('_')[0])
+                if batch_number > batch:
+                    batch = batch_number
+
             trainable_data = True
             while trainable_data:
                 # Load a new batch of subjects
