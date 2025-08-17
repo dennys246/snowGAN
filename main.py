@@ -10,9 +10,20 @@ import src.config
 
 def configure_device(args):
     # Configure tensorflow
+    if hasattr(args, "device") and args.device == "cpu":
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+    else:
+        # Enable memory growth for all GPUs
+        gpus = tf.config.list_physical_devices('GPU')
+        if gpus:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
     if args.xla == True: # Use XLA computation for faster runtime operations
         tf.config.optimizer.set_jit(True)  
+    if args.mixed_precision == True : # Use mixed precision for faster training
+        set_global_policy("mixed_float16")
 
 def configure_model(args):
     gen_config = src.config.build(f"{args.save_dir}generator_config.json")
@@ -63,17 +74,19 @@ def main():
     parser.add_argument('--dataset_dir', type = str, default = 'rmdig/rocky_mountain_snowpack', help = "Path to the Rocky Mountain Snowpack dataset, if none provided it will download directly from HF remote repository")
     parser.add_argument('--save_dir', type = str, default = "keras/snowgan/", help = "Path to save results where a pre-trained model may be found (defaults to keras/snowgan/)")
     parser.add_argument('--new', type = bool, default = False, help = 'Whether to rebuild model from scratch (defaults to False)')
+    
+    parser.add_argument('--device', type = str, choices = ["cpu", "gpu"], default = "gpu", help = 'Device to run the model on (defaults to gpu)')
     parser.add_argument('--xla', type = bool, default = False, help = 'Whether to use accelerated linear algebra (XLA) (defaults to False)')
+    parser.add_argument('--mixed_precision', type = bool, default = False, help = 'Whether to use mixed precision training (defaults to False)')
 
     parser.add_argument('--resolution', type = set, default = (1024, 1024), help = 'Resolution to downsample images too (Default set to (1024, 1024))')
     parser.add_argument('--synthetics', type = int, default = 10, help = "Number of synthetic images to generate (defaults to 10)")
-    parser.add_argument('--batches', type = int, default = None, help = 'Number of batches to run (Default to max available)')
     parser.add_argument('--batch_size', type = int, default = 8, help = 'Batch size (Defaults to 8)')
     parser.add_argument('--epochs', type = int, default = 10, help = 'Epochs to train on (Defaults to 10)')
     parser.add_argument('--latent_dim', type = float, default = 100, help = 'Latent dimension size (Defaults to 100)')
 
     parser.add_argument('--gen_kernel', type = list, default = [10, 10], help = 'Generator kernel size (Defaults to [5, 5])')
-    parser.add_argument('--gen_stride', type = list, default = [2, 2], help = 'Generator kernel stride (Defaults to [2, 2])')
+    parser.add_argument('--gen_stride', type = list, default = [3, 3], help = 'Generator kernel stride (Defaults to [2, 2])')
     parser.add_argument('--gen_lr', type = float, default = 1e-3, help = 'Generators optimizer learning rate (Defaults to 0.001)')
     parser.add_argument('--gen_beta_1', type = float, default = 0.5, help = 'Generators optimizer adam beta one (Defaults to 0.5)')
     parser.add_argument('--gen_beta_2', type = float, default = 0.9, help = 'Generators optimizer adam beta two (Defaults to 0.9)')
@@ -82,7 +95,7 @@ def main():
     parser.add_argument('--gen_filters', type = list, default = [1024, 512, 256, 128, 64], help = 'Generators filters per convolution layer (Defaults to [1024, 512, 256, 128, 64])')
     
     parser.add_argument('--disc_kernel', type = list, default = [10, 10], help = 'Discriminator kernel size (Defaults to [5, 5])')
-    parser.add_argument('--disc_stride', type = list, default = [2, 2], help = 'Discriminator kernel stride (Defaults to [2, 2])')
+    parser.add_argument('--disc_stride', type = list, default = [3, 3], help = 'Discriminator kernel stride (Defaults to [2, 2])')
     parser.add_argument('--disc_lr', type = float, default = 1e-4, help = 'Discriminators learning rate (Defaults to 0.0001)')
     parser.add_argument('--disc_beta_1', type = float, default = 0.5, help = 'Discriminators adam beta one (Defaults to 0.5)')
     parser.add_argument('--disc_beta_2', type = float, default = 0.9, help = 'Discriminators dam beta two (Defaults to 0.9)')
@@ -90,9 +103,6 @@ def main():
     parser.add_argument('--disc_lambda_gp', type = int, default = 10.0, help = 'Disciminators lambda GP (Defaults to 10.0)')
     parser.add_argument('--disc_steps', type = int, default = 1, help = 'Steps the discriminator takes per batch (Defaults to 1)')
     parser.add_argument('--disc_filters', type = list, default = [64, 128, 256, 512, 1024], help = 'Discriminator filters per convolution layer (Defaults to [64, 128, 256, 512, 1024])')
-    
-    
-
 
     # Parse the arguments
     args = parser.parse_args()
@@ -113,8 +123,8 @@ def main():
         discriminator.model.build((args.resolution[0], args.resolution[1], 3))
 
         # Call to trainer
-        trainer = Trainer(generator, discriminator, dataset)
-        trainer.train(batches = args.batches, batch_size = args.batch_size, epochs = args.epochs)
+        trainer = Trainer(generator, discriminator)
+        trainer.train(batch_size = args.batch_size, epochs = args.epochs)
     
     if args.mode == "generate":
 
