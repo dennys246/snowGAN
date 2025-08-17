@@ -4,6 +4,7 @@ from glob import glob
 config_template = {
             "save_dir": "outputs",
             "dataset": "dennys246/rocky_mountain_snowpack",
+            "datatype": "magnified_profile",
             "architecture": "generator",
             "resolution": (1024, 1024),
             "images": None,
@@ -73,10 +74,11 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, dataset, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, synthetics, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
+    def configure(self, save_dir, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, synthetics, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
 		#-------------------------------- Model Set-Up -------------------------------#
         self.save_dir = save_dir
         self.dataset = dataset
+        self.datatype = datatype
         self.architecture = architecture
         self.resolution = resolution
         self.images = images
@@ -112,6 +114,7 @@ class build:
         config = {
             "save_dir": self.save_dir,
             "dataset": self.dataset,
+            "datatype": self.datatype,
             "architecture": self.architecture,
             "resolution": self.resolution,
             "images": self.images,
