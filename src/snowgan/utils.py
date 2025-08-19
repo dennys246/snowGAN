@@ -1,12 +1,9 @@
-import argparse, os, datasets
-import tensorflow as tf
+import os, argparse, datasets
 from tensorflow.keras.mixed_precision import set_global_policy
+import tensorflow as tf
+from pathlib import Path
 
-from src.models.generator import Generator
-from src.models.discriminator import Discriminator
-from src.trainer import Trainer
-from src.generate import generate, make_movie
-import src.config
+from snowgan.config import build as configuration
 
 def configure_device(args):
     # Configure tensorflow
@@ -25,54 +22,16 @@ def configure_device(args):
     if args.mixed_precision == True : # Use mixed precision for faster training
         set_global_policy("mixed_float16")
 
-def configure_model(args):
-    gen_config = src.config.build(f"{args.save_dir}generator_config.json")
-    gen_config.save_dir = args.save_dir
-    gen_config.architecture = "generator"
-    gen_config.resolution = args.resolution
-    gen_config.epochs = args.epochs 
-    gen_config.batch_size = args.batch_size
-    gen_config.kernel_size = args.gen_kernel
-    gen_config.kernel_stride = args.gen_stride
-    gen_config.learning_rate = args.gen_lr
-    gen_config.beta_1 = args.gen_beta_1
-    gen_config.beta_2 = args.gen_beta_2
-    gen_config.negative_slope = args.gen_negative_slope
-    gen_config.training_steps = args.gen_steps
-    gen_config.filter_counts = args.gen_filters
-    gen_config.latent_dim = args.latent_dim
 
-    disc_config = src.config.build(f"{args.save_dir}discriminator_config.json")
-    disc_config.save_dir = args.save_dir
-    disc_config.architecture = "discriminator"
-    disc_config.resolution = args.resolution
-    disc_config.epochs = args.epochs 
-    disc_config.batch_size = args.batch_size
-    disc_config.kernel_size = args.disc_kernel
-    disc_config.kernel_stride = args.disc_stride
-    disc_config.learning_rate = args.disc_lr
-    disc_config.beta_1 = args.disc_beta_1
-    disc_config.beta_2 = args.disc_beta_2
-    disc_config.negative_slope = args.disc_negative_slope
-    disc_config.lambda_gp = args.disc_lambda_gp
-    disc_config.training_steps = args.disc_steps
-    disc_config.filter_counts = args.disc_filters
-    disc_config.latent_dim = args.latent_dim
-
-    return gen_config, disc_config 
-
-def load_dataset(dataset_dir):
-    return datasets.load_dataset(dataset_dir)
-
-def main():
-
-    # Initialize the parser for accepting arugments into a command line call
+def parse_args():
+        # Initialize the parser for accepting arugments into a command line call
     parser = argparse.ArgumentParser(description = "The snowGAN model is used to train a GAN on a dataset of snow samples magnified on a crystal card. You can define how the model runs by the number of epochs, batch sizes and other parameters. You can also pass in a path to a pre-trained snowGAN to accomplish transfer learning on new GAN tasks!")
 
     # Add command-line arguments
     parser.add_argument('--mode', type = str, choices = ["train", "generate"], required = True, help = "Mode to run the model in, either generate fake data or train the model")
     parser.add_argument('--dataset_dir', type = str, default = 'rmdig/rocky_mountain_snowpack', help = "Path to the Rocky Mountain Snowpack dataset, if none provided it will download directly from HF remote repository")
     parser.add_argument('--save_dir', type = str, default = "keras/snowgan/", help = "Path to save results where a pre-trained model may be found (defaults to keras/snowgan/)")
+    parser.add_argument('--model_filename', type = str, default = "generator.keras", help = "Path to a pre-trained model to load (defaults to None)")
     parser.add_argument('--new', type = bool, default = False, help = 'Whether to rebuild model from scratch (defaults to False)')
     
     parser.add_argument('--device', type = str, choices = ["cpu", "gpu"], default = "gpu", help = 'Device to run the model on (defaults to gpu)')
@@ -105,32 +64,11 @@ def main():
     parser.add_argument('--disc_filters', type = list, default = [64, 128, 256, 512, 1024], help = 'Discriminator filters per convolution layer (Defaults to [64, 128, 256, 512, 1024])')
 
     # Parse the arguments
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    configure_device(args)
-
-    gen_config, disc_config = configure_model(args)
-
-    # Load the generator
-    generator = Generator(gen_config)
-    generator.model.build((args.latent_dim,))
-
-    if args.mode == "train":
-        dataset = load_dataset(args.dataset_dir)
-
-        # Load the discriminator
-        discriminator = Discriminator(disc_config)
-        discriminator.model.build((args.resolution[0], args.resolution[1], 3))
-
-        # Call to trainer
-        trainer = Trainer(generator, discriminator)
-        trainer.train(batch_size = args.batch_size, epochs = args.epochs)
-    
-    if args.mode == "generate":
-
-        generate(generator, args.synthetics, args.latent_dim, args.save_dir)
-
-if __name__ == "__main__":
-
-    main()
-
+def get_repo_root(start: str = ".") -> Path:
+    path = Path(start).resolve()
+    for parent in [path, *path.parents]:
+        if (parent / ".git").exists():
+            return parent
+    raise FileNotFoundError("No .git directory found")

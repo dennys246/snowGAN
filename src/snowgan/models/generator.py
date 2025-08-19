@@ -1,4 +1,7 @@
+import os
 import tensorflow as tf
+
+from snowgan.config import configure_generator
 
 class Generator(tf.keras.Model):
     def __init__(self, config):
@@ -52,3 +55,21 @@ class Generator(tf.keras.Model):
             tf.Tensor: Generator loss
         """
         return -tf.reduce_mean(synthetic_difference)
+
+def load_generator(model_path):
+    split = model_path.split("/")
+
+    # Check if the model path exists
+    if not os.path.exists(model_path):
+        print(f"Model file not found at {model_path}, creating a new generator model.")
+        os.makedirs("/".join(split[:-1]), exist_ok = True)
+
+    config = configure_generator("/".join(split[:-1]) + "/generator.keras")
+    
+    config.model_filename = split.pop() # Get the model filename from the path
+    config.save_dir = "/".join(split) + "/"
+
+    # Load the discriminator
+    generator = Generator(config)
+    generator.model.build((config.resolution[0], config.resolution[1], 3))
+    return generator

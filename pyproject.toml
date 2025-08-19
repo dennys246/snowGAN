@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snowgan"
+version = "0.1.0"
+description = "A GAN for generating snowpack images."
+readme = "README.md"
+authors = [
+  { name="Denny Schaedig", email="dennys@rmdig.ai" }
+]
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+dependencies = [
+  "tensorflow>=2.15",
+  "keras>=3.0",
+  "numpy",
+  "matplotlib",
+  "pillow",
+  "click",  # optional, if you use click/argparse
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+snowgan = "snowgan.main:main"

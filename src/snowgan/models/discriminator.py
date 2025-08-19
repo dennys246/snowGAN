@@ -1,4 +1,7 @@
+import os
 import tensorflow as tf
+
+from snowgan.config import configure_discriminator
 
 class Discriminator(tf.keras.Model):
     def __init__(self, config):
@@ -49,3 +52,21 @@ class Discriminator(tf.keras.Model):
         """
         wasserstein = tf.reduce_mean(synthetic_output) - tf.reduce_mean(real_output)
         return wasserstein + lambda_gp * gp
+    
+def load_discriminator(model_path):
+    split = model_path.split("/")
+
+    # Check if the model path exists
+    if not os.path.exists(model_path):
+        print(f"Model file not found at {model_path}, creating a new discriminator model.")
+        os.makedirs("/".join(split[:-1]), exist_ok = True)
+
+    config = configure_discriminator("/".join(split[:-1]) + "/discriminator.keras")
+
+    config.model_filename = split.pop() # Get the model filename from the path
+    config.save_dir = "/".join(split) + "/"
+
+    # Load the discriminator
+    discriminator = Discriminator(config)
+    discriminator.model.build((config.resolution[0], config.resolution[1], 3))
+    return discriminator
