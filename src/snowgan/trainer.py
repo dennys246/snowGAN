@@ -1,4 +1,4 @@
-import os, atexit
+import os, atexit, keras
 import tensorflow as tf
 import numpy as np
 from matplotlib import pyplot as plt
@@ -20,12 +20,14 @@ class Trainer:
         if not self.gen.built:
             self.gen.build(self.gen.config.resolution)
 
+        print(os.getcwd())
+
         # Attempt to load weights if they haven't been built yet
-        if self.gen.weights:
+        if not self.gen.weights:
             gen_weights_filepath = os.path.join(self.gen.config.save_dir, self.gen.config.model_filename)
-            print(gen_weights_filepath)
             if os.path.exists(gen_weights_filepath):
-                self.gen.load_weights(gen_weights_filepath)
+                print(gen_weights_filepath)
+                self.gen = keras.models.load_model(gen_weights_filepath)
                 print("Generator weights loaded successfully")
             else:
                 print("Generator saved weights not found, new model initialized")
@@ -37,11 +39,11 @@ class Trainer:
             self.disc.build(self.disc.config.resolution)
 
         # If weights haven't been initialized
-        if not self.disc.weights():
+        if not self.disc.weights:
             # Load them weights
             disc_weights_filepath = os.path.join(self.disc.config.save_dir, self.disc.config.model_filename)
             if os.path.exists(disc_weights_filepath):
-                self.disc.load_weights(disc_weights_filepath)
+                self.disc = keras.models.load_model(disc_weights_filepath)
                 print("Discriminator weights loaded successfully")
             else:
                 print("Disciminator saved weights not found, new model initialized")
