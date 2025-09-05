@@ -51,6 +51,7 @@ This is an actively evolving project, with only 1/2 of the dataset being utilize
 ## How to Use
 
 ```bash
-python3 main.py --mode train --gen_steps 4 --disc_lr 0.0001
-python3 main.py --mode generate --synthetics 10
-```
+snowgan --mode train --gen_steps 4 --disc_lr 0.0001
+
+snowgan --mode generate --synthetics 10
+``` 

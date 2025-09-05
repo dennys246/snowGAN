@@ -8,28 +8,43 @@ from snowgan.losses import compute_gradient_penalty
 from snowgan.generate import generate, make_movie
 from snowgan.log import save_history, load_history
 from snowgan.data.dataset import DataManager
-
+ 
 class Trainer:
 
     def __init__(self, generator, discriminator):
 
         # Generator and discriminator models
         self.gen = generator
-        gen_weights_filepath = os.path.join(self.gen.config.save_dir, self.gen.config.model_filename)
-        print(gen_weights_filepath)
-        if os.path.exists(gen_weights_filepath):
-            self.gen.load_model(gen_weights_filepath)
-            print("Generator weights loaded successfully")
-        else:
-            print("Generator saved weights not found, new model initialized")
+        
+        # If model not yet built
+        if not self.gen.built:
+            self.gen.build(self.gen.config.resolution)
+
+        # Attempt to load weights if they haven't been built yet
+        if self.gen.weights:
+            gen_weights_filepath = os.path.join(self.gen.config.save_dir, self.gen.config.model_filename)
+            print(gen_weights_filepath)
+            if os.path.exists(gen_weights_filepath):
+                self.gen.load_weights(gen_weights_filepath)
+                print("Generator weights loaded successfully")
+            else:
+                print("Generator saved weights not found, new model initialized")
 
         self.disc = discriminator
-        disc_weights_filepath = os.path.join(self.disc.config.save_dir, self.disc.config.model_filename)
-        if os.path.exists(disc_weights_filepath):
-            self.disc.load_model(disc_weights_filepath)
-            print("Discriminator weights loaded successfully")
-        else:
-            print("Disciminator saved weights not found, new model initialized")
+
+        # If model not yet built
+        if not self.disc.built:
+            self.disc.build(self.disc.config.resolution)
+
+        # If weights haven't been initialized
+        if not self.disc.weights():
+            # Load them weights
+            disc_weights_filepath = os.path.join(self.disc.config.save_dir, self.disc.config.model_filename)
+            if os.path.exists(disc_weights_filepath):
+                self.disc.load_weights(disc_weights_filepath)
+                print("Discriminator weights loaded successfully")
+            else:
+                print("Disciminator saved weights not found, new model initialized")
 
         self.save_dir = self.gen.config.save_dir # Save dictory for the model and it's generated images
 
