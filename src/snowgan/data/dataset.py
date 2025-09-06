@@ -42,9 +42,13 @@ class DataManager:
         }
 
         datatype = translator[datatype]
+
+        print(f"Collecting a batch...")
         
         while count < batch_size and self.config.train_ind < len(self.dataset['train']):
             sample = self.dataset['train'][self.config.train_ind]
+
+            print(f"Checking sample at index {self.config.train_ind}")
 
             if sample['datatype'] == datatype:
 
@@ -62,8 +66,10 @@ class DataManager:
                 scaled_image = (tf.cast(image, tf.float32) / 127.5) - 1.0
 
                 batch.append(scaled_image)
+                print(f"Image {self.config.train_ind} added")
 
                 count += 1
+            self.config.train_ind += 1
 
         if len(batch) > 0:
             return np.stack(batch)

@@ -12,15 +12,13 @@ from snowgan.data.dataset import DataManager
 class Trainer:
 
     def __init__(self, generator, discriminator):
-
+        print("Initializing trainer...")
         # Generator and discriminator models
         self.gen = generator
         
         # If model not yet built
-        if not self.gen.built:
-            self.gen.build(self.gen.config.resolution)
-
-        print(os.getcwd())
+        #if not self.gen.built:
+        #    self.gen.build(self.gen.config.resolution)
 
         # Attempt to load weights if they haven't been built yet
         if not self.gen.weights:
@@ -35,8 +33,8 @@ class Trainer:
         self.disc = discriminator
 
         # If model not yet built
-        if not self.disc.built:
-            self.disc.build(self.disc.config.resolution)
+        #if not self.disc.built:
+        #    self.disc.build(self.disc.config.resolution)
 
         # If weights haven't been initialized
         if not self.disc.weights:
@@ -73,6 +71,8 @@ class Trainer:
 
         atexit.register(self.save_model)
 
+        print("Trainer initialized...")
+
     def train(self, batch_size = 8, epochs = 1):
         """
         Initializes training the discriminator and generator based on requested
@@ -101,7 +101,9 @@ class Trainer:
             trainable_data = True
             while trainable_data:
                 # Load a new batch of subjects
+                print(f"Grab a batch of data")
                 x = self.dataset.batch(batch_size, 'magnified_profile') 
+                print("Data batched")
                 if x is None:
                     print(f"Training Epoch Complete")
                     trainable_data = False
