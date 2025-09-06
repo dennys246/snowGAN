@@ -48,7 +48,7 @@ class DataManager:
         while count < batch_size and self.config.train_ind < len(self.dataset['train']):
             sample = self.dataset['train'][self.config.train_ind]
 
-            print(f"Checking sample at index {self.config.train_ind}")
+            print(f"Checking sample at index {self.config.train_ind} - {sample['datatype']} - {datatype}")
 
             if sample['datatype'] == datatype:
 
