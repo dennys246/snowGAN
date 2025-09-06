@@ -9,13 +9,13 @@ def save_history(save_dir, loss, trained_data):
 
     # Save the current generate loss progress
     with open(f"{save_dir}generator_loss.txt", "w") as file:
-        for loss in loss['gen']:
-            file.write(f"{loss}\n")
+        for loss_datum in loss['gen']:
+            file.write(f"{loss_datum}\n")
 
     # Save the current discriminator loss
     with open(f"{save_dir}discriminator_loss.txt", "w") as file:
-        for loss in loss['disc']:
-            file.write(f"{loss}\n")
+        for loss_datum in loss['disc']:
+            file.write(f"{loss_datum}\n")
 
     with open(f"{save_dir}trained.txt", "w") as file:
         for trained in trained_data:
