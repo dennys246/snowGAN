@@ -76,7 +76,17 @@ class build:
         return config_json
 
     def configure(self, save_dir, model_filename, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, synthetics, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
-		#-------------------------------- Model Set-Up -------------------------------#
+		# Process lists
+        if isinstance(filter_counts, str):
+            filter_counts = [int(datum) for datum in filter_counts.split(' ')]
+
+        if isinstance(kernel_size, str):
+            kernel_size = [int(datum) for datum in kernel_size.split(' ')]
+
+        if isinstance(kernel_stride, str):
+            kernel_stride = [int(datum) for datum in kernel_stride.split(' ')]
+        
+        #-------------------------------- Model Set-Up -------------------------------#
         self.save_dir = save_dir or "keras/snowgan/"
         self.model_filename = model_filename or "generator.keras"
         self.dataset = dataset or "dennys246/rocky_mountain_snowpack"
@@ -102,7 +112,7 @@ class build:
         self.convolution_depth = convolution_depth or 5
         self.filter_counts = filter_counts or [64, 128, 256, 512, 1024]
         self.kernel_size = kernel_size or [5, 5]
-        self.kernel_stride = kernel_stride or (2, 2)
+        self.kernel_stride = kernel_stride or [2, 2]
         self.final_activation = final_activation or "tanh"
         self.zero_padding = zero_padding or None
         self.padding = padding or "same"
