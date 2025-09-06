@@ -22,7 +22,7 @@ config_template = {
             "beta_1": 0.5,
             "beta_2": 0.9,
             "negative_slope": 0.25,
-            "lambda_gp": None,
+            "lambda_gp": 10.0,
             "latent_dim": 100,
             "convolution_depth": 5,
             "filter_counts": [64, 128, 256, 512, 1024],
