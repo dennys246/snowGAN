@@ -103,7 +103,7 @@ class Trainer:
                 # Load a new batch of subjects
                 print(f"Grab a batch of data")
                 x = self.dataset.batch(batch_size, 'magnified_profile') 
-                print("Data batched")
+                print(f"Data batched")
                 if x is None:
                     print(f"Training Epoch Complete")
                     trainable_data = False
@@ -143,6 +143,7 @@ class Trainer:
             self.gen.config.training_steps = gen_steps
 
         # Set batch size to the number of images passed in
+        print(f"Images: {images}")
         batch_size = tf.shape(images)[0] 
 
         # Generate noise for generator input
