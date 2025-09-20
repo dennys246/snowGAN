@@ -52,3 +52,4 @@ def load_history(save_dir):
         
     return loss, trained_data
 
+ 
