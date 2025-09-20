@@ -63,7 +63,7 @@ class DataManager:
                 if image.shape.rank == 2:  # grayscale image
                     image = tf.expand_dims(image, -1)
 
-                scaled_image = (tf.cast(image, tf.float32) / 127.5) - 1.0
+                scaled_image = (tf.cast(image, tf.float32) / 127.5) - 1.0         
 
                 batch.append(scaled_image)
                 print(f"Image {self.config.train_ind} added")
