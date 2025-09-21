@@ -9,7 +9,7 @@ from snowgan.models.generator import Generator, load_generator
 
 from snowgan.trainer import Trainer as trainer
 from snowgan.generate import generate
-from snowgan.config import configure_discriminator, configure_generator
+from snowgan.config import load_gen_config, configure_gen, load_disc_config, configure_disc
 from snowgan.config import build as configuration
 
 # Define a clean public API
@@ -21,6 +21,8 @@ __all__ = [
     "trainer",
     "generate",
     "configuration",
-    "configure_generator",
-    "configure_discriminator"
+    "load_gen_config",
+    "configure_gen",
+    "load_disc_config",
+    "configure_disc"
 ]

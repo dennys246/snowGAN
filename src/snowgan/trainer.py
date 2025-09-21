@@ -50,7 +50,7 @@ class Trainer:
 
         self.batch_size = self.gen.config.batch_size # Number of images to load in per training batch
 
-        self.synthetics = self.gen.config.synthetics # Number of synthetic images to generate after training
+        self.n_samples = self.gen.config.n_samples # Number of synthetic images to generate after training
 
             # Setup optimizers from config or defaults
         self.gen_optimizer = tf.keras.optimizers.Adam(learning_rate=self.gen.config.learning_rate,
@@ -116,8 +116,8 @@ class Trainer:
                 self.plot_history() # Update history with progress
                 
                 # Generate synthetic images to the batch folder to track progress
-                if self.synthetics:
-                    _ = generate(self.gen, count = self.synthetics, seed_size = self.gen.config.latent_dim, save_dir = f"{self.save_dir}/synthetic_images/", filename_prefix = f'batch_{batch}_synthetic')
+                if self.n_samples:
+                    _ = generate(self.gen, count = self.n_samples, seed_size = self.gen.config.latent_dim, save_dir = f"{self.save_dir}/synthetic_images/", filename_prefix = f'batch_{batch}_synthetic')
                 
                 # Save the models state
                 if batch % 10 == 0:

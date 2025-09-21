@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 
-from snowgan.config import configure_discriminator
+from snowgan.config import load_disc_config
 
 class Discriminator(tf.keras.Model):
     def __init__(self, config):
@@ -58,10 +58,10 @@ def load_discriminator(model_path):
 
     # Check if the model path exists
     if not os.path.exists(model_path):
-        print(f"Model file not found at {model_path}, creating a new discriminator model.")
+        print(f"Model file not found at {model_path}, creating a rebuild discriminator model.")
         os.makedirs("/".join(split[:-1]), exist_ok = True)
 
-    config = configure_discriminator("/".join(split[:-1]) + "/discriminator.keras")
+    config = load_disc_config("/".join(split[:-1]) + "/discriminator.keras")
 
     config.model_filename = split.pop() # Get the model filename from the path
     config.save_dir = "/".join(split) + "/"

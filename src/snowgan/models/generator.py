@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 
-from snowgan.config import configure_generator
+from snowgan.config import load_gen_config
 
 class Generator(tf.keras.Model):
     def __init__(self, config):
@@ -61,10 +61,10 @@ def load_generator(model_path):
 
     # Check if the model path exists
     if not os.path.exists(model_path):
-        print(f"Model file not found at {model_path}, creating a new generator model.")
+        print(f"Model file not found at {model_path}, creating a rebuild generator model.")
         os.makedirs("/".join(split[:-1]), exist_ok = True)
 
-    config = configure_generator("/".join(split[:-1]) + "/generator.keras")
+    config = load_gen_config("/".join(split[:-1]) + "/generator.keras")
     
     config.model_filename = split.pop() # Get the model filename from the path
     config.save_dir = "/".join(split) + "/"

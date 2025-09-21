@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snowgan"
-version = "0.1.0"
-description = "A GAN for generating snowpack images."
+version = "1.0.0"
+description = "A GAN for practicing fine-tuning and generating images using the Rocky Mountain snowpack dataset (rmdig/rocky_mountain_snowpack)."
 readme = "README.md"
 authors = [
   { name="Denny Schaedig", email="dennys@rmdig.ai" }

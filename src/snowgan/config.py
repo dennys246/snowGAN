@@ -13,7 +13,7 @@ config_template = {
             "validation_pool": None,
             "test_pool": None,
             "model_history": None,
-            "synthetics": 10,
+            "n_samples": 10,
             "epochs": 10,
             "current_epoch": 0,
             "batch_size": 8,
@@ -39,7 +39,10 @@ config_template = {
 }
 
 class build:
-    def __init__(self, config_filepath):
+    def __init__(self, config_filepath, config = None):
+        if config is None:
+            config = config_template
+
         self.config_filepath = config_filepath
         if os.path.exists(config_filepath): # Try and load config if folder passed in
             print(f"Loading config file: {self.config_filepath}")
@@ -47,7 +50,7 @@ class build:
             config_json['rebuild'] = False # Set to false if able to load a pre-existing model
         else:
             print("WARNING: Config not found, building from template...")
-            config_json = copy.deepcopy(config_template)
+            config_json = copy.deepcopy(config)
 
         self.configure(**config_json) # Build configuration
 
@@ -75,7 +78,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, model_filename, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, synthetics, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
+    def configure(self, save_dir, model_filename, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -98,7 +101,7 @@ class build:
         self.validation_pool = validation_pool or None
         self.test_pool = test_pool or None
         self.model_history = model_history or None
-        self.synthetics = synthetics or 10
+        self.n_samples = n_samples or 10
         self.epochs = epochs or 10
         self.current_epoch = current_epoch or 0
         self.batch_size = batch_size or 8
@@ -135,7 +138,7 @@ class build:
             "validation_pool": self.validation_pool,
             "test_pool": self.test_pool,
             "model_history": self.model_history,
-            "synthetics": self.synthetics,
+            "n_samples": self.n_samples,
             "epochs": self.epochs,
             "current_epoch": self.current_epoch,
             "batch_size": self.batch_size,
@@ -161,9 +164,9 @@ class build:
         }
         return config
 
-def configure_generator(config_filepath):
+def load_gen_config(config_filepath, config = None):
     # Configure the discriminator
-    gen_config = build(config_filepath)
+    gen_config = build(config_filepath, config)
 
     if not os.path.exists(config_filepath):
         split = config_filepath.split("/")
@@ -172,9 +175,23 @@ def configure_generator(config_filepath):
         gen_config.architecture = "generator"
     return gen_config 
 
-def configure_discriminator(config_filepath):
+def configure_gen(config, args):
+    config = configure_generic(config, args)
+
+    config['kernel_size'] = args.gen_kernel
+    config['kernel_stride'] = args.gen_stride
+    config['learning_rate'] = args.gen_lr
+    config['beta_1'] = args.gen_beta_1
+    config['beta_2'] = args.gen_beta_2
+    config['negative_slope'] = args.gen_negative_slope
+    config['training_steps'] = args.gen_steps
+    config['filter_counts'] = args.gen_filters
+    return config
+    
+
+def load_disc_config(config_filepath, config = None):
     # Configure the discriminator
-    disc_config = build(config_filepath)
+    disc_config = build(config_filepath, config)
 
     if not os.path.exists(config_filepath):
         split = config_filepath.split("/")
@@ -182,3 +199,29 @@ def configure_discriminator(config_filepath):
         disc_config.model_filename = disc_config.model_filename or "discriminator.keras"
         disc_config.architecture = "discriminator"
     return disc_config 
+
+def configure_disc(config, args):
+    config = configure_generic(config, args)
+
+    config['kernel_size'] = args.disc_kernel
+    config['kernel_stride'] = args.disc_stride
+    config['learning_rate'] = args.disc_lr
+    config['beta_1'] = args.disc_beta_1
+    config['beta_2'] = args.disc_beta_2
+    config['negative_slope'] = args.disc_negative_slope
+    config['training_steps'] = args.disc_steps
+    config['filter_counts'] = args.disc_filters
+    return config
+
+def configure_generic(config, args):
+    config['save_dir'] = args.save_dir
+    config['model_filename'] = args.model_filename
+    config['rebuild'] = args.rebuild
+
+    config['resolution'] = args.resolution
+    config['n_samples'] = args.n_samples
+    config['batch_size'] = args.batch_size
+    config['epochs'] = args.epochs
+    config['latent_dim'] = args.latent_dim
+    return config
+

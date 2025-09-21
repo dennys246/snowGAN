@@ -25,21 +25,21 @@ def configure_device(args):
 
 def parse_args():
         # Initialize the parser for accepting arugments into a command line call
-    parser = argparse.ArgumentParser(description = "The snowGAN model is used to train a GAN on a dataset of snow samples magnified on a crystal card. You can define how the model runs by the number of epochs, batch sizes and other parameters. You can also pass in a path to a pre-trained snowGAN to accomplish transfer learning on new GAN tasks!")
+    parser = argparse.ArgumentParser(description = "The snowGAN model is used to train a GAN on a dataset of snow samples magnified on a crystal card. You can define how the model runs by the number of epochs, batch sizes and other parameters. You can also pass in a path to a pre-trained snowGAN to accomplish transfer learning on rebuild GAN tasks!")
 
     # Add command-line arguments
     parser.add_argument('--mode', type = str, choices = ["train", "generate"], required = True, help = "Mode to run the model in, either generate fake data or train the model")
     parser.add_argument('--dataset_dir', type = str, default = 'rmdig/rocky_mountain_snowpack', help = "Path to the Rocky Mountain Snowpack dataset, if none provided it will download directly from HF remote repository")
     parser.add_argument('--save_dir', type = str, default = "keras/snowgan/", help = "Path to save results where a pre-trained model may be found (defaults to keras/snowgan/)")
     parser.add_argument('--model_filename', type = str, default = "generator.keras", help = "Path to a pre-trained model to load (defaults to None)")
-    parser.add_argument('--new', type = bool, default = False, help = 'Whether to rebuild model from scratch (defaults to False)')
+    parser.add_argument('--rebuild', type = bool, default = False, help = 'Whether to rebuild model from scratch (defaults to False)')
     
     parser.add_argument('--device', type = str, choices = ["cpu", "gpu"], default = "gpu", help = 'Device to run the model on (defaults to gpu)')
     parser.add_argument('--xla', type = bool, default = False, help = 'Whether to use accelerated linear algebra (XLA) (defaults to False)')
     parser.add_argument('--mixed_precision', type = bool, default = False, help = 'Whether to use mixed precision training (defaults to False)')
 
     parser.add_argument('--resolution', type = set, default = (1024, 1024), help = 'Resolution to downsample images too (Default set to (1024, 1024))')
-    parser.add_argument('--synthetics', type = int, default = 10, help = "Number of synthetic images to generate (defaults to 10)")
+    parser.add_argument('--n_samples', type = int, default = 10, help = "Number of synthetic images to generate (defaults to 10)")
     parser.add_argument('--batch_size', type = int, default = 8, help = 'Batch size (Defaults to 8)')
     parser.add_argument('--epochs', type = int, default = 10, help = 'Epochs to train on (Defaults to 10)')
     parser.add_argument('--latent_dim', type = float, default = 100, help = 'Latent dimension size (Defaults to 100)')

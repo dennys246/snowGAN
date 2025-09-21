@@ -173,6 +173,9 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# VSC
+.vscode
+
 # snowGAN specific exclusions
 outputs/
 .DS_Store
