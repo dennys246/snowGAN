@@ -153,6 +153,7 @@ class Trainer:
         for _ in range(self.disc.config.training_steps): 
             # Initialize automatic differentiation during forward propogation
             with tf.GradientTape() as tape: 
+                print(f"Noise shape: {noise.shape}")
                 # Generate a synthetic sample via forward propogation in the generator
                 synthetic_images = self.gen.model(noise, training=True) 
 

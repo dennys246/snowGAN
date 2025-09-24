@@ -53,5 +53,5 @@ This is an actively evolving project, with only 1/2 of the dataset being utilize
 ```bash
 snowgan --mode train --gen_steps 4 --disc_lr 0.0001
 
-snowgan --mode generate --synthetics 10
+snowgan --mode generate --n_samples 10
 ``` 

@@ -44,8 +44,8 @@ def parse_args():
     parser.add_argument('--epochs', type = int, default = 10, help = 'Epochs to train on (Defaults to 10)')
     parser.add_argument('--latent_dim', type = float, default = 100, help = 'Latent dimension size (Defaults to 100)')
 
-    parser.add_argument('--gen_kernel', type = list, default = [10, 10], help = 'Generator kernel size (Defaults to [5, 5])')
-    parser.add_argument('--gen_stride', type = list, default = [3, 3], help = 'Generator kernel stride (Defaults to [2, 2])')
+    parser.add_argument('--gen_kernel', type = list, default = [5, 5], help = 'Generator kernel size (Defaults to [5, 5])')
+    parser.add_argument('--gen_stride', type = list, default = [2, 2], help = 'Generator kernel stride (Defaults to [2, 2])')
     parser.add_argument('--gen_lr', type = float, default = 1e-3, help = 'Generators optimizer learning rate (Defaults to 0.001)')
     parser.add_argument('--gen_beta_1', type = float, default = 0.5, help = 'Generators optimizer adam beta one (Defaults to 0.5)')
     parser.add_argument('--gen_beta_2', type = float, default = 0.9, help = 'Generators optimizer adam beta two (Defaults to 0.9)')
@@ -53,8 +53,8 @@ def parse_args():
     parser.add_argument('--gen_steps', type = int, default = 3, help = 'Training steps the generator takes per batch (Defaults to 5)')
     parser.add_argument('--gen_filters', type = list, default = [1024, 512, 256, 128, 64], help = 'Generators filters per convolution layer (Defaults to [1024, 512, 256, 128, 64])')
     
-    parser.add_argument('--disc_kernel', type = list, default = [10, 10], help = 'Discriminator kernel size (Defaults to [5, 5])')
-    parser.add_argument('--disc_stride', type = list, default = [3, 3], help = 'Discriminator kernel stride (Defaults to [2, 2])')
+    parser.add_argument('--disc_kernel', type = list, default = [5, 5], help = 'Discriminator kernel size (Defaults to [5, 5])')
+    parser.add_argument('--disc_stride', type = list, default = [2, 2], help = 'Discriminator kernel stride (Defaults to [2, 2])')
     parser.add_argument('--disc_lr', type = float, default = 1e-4, help = 'Discriminators learning rate (Defaults to 0.0001)')
     parser.add_argument('--disc_beta_1', type = float, default = 0.5, help = 'Discriminators adam beta one (Defaults to 0.5)')
     parser.add_argument('--disc_beta_2', type = float, default = 0.9, help = 'Discriminators dam beta two (Defaults to 0.9)')
