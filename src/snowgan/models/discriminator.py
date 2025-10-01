@@ -63,7 +63,7 @@ def load_discriminator(model_path):
 
     config = load_disc_config("/".join(split[:-1]) + "/discriminator.keras")
 
-    config.model_filename = split.pop() # Get the model filename from the path
+    config.checkpoint = split.pop() # Get the model filename from the path
     config.save_dir = "/".join(split) + "/"
 
     # Load the discriminator

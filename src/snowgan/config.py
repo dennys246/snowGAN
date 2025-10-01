@@ -3,7 +3,7 @@ from glob import glob
 
 config_template = {
             "save_dir": None,
-            "model_filename": None,
+            "checkpoint": None,
             "dataset": "dennys246/rocky_mountain_snowpack",
             "datatype": "magnified_profile",
             "architecture": "generator",
@@ -78,7 +78,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, model_filename, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -91,7 +91,7 @@ class build:
         
         #-------------------------------- Model Set-Up -------------------------------#
         self.save_dir = save_dir or "keras/snowgan/"
-        self.model_filename = model_filename or "generator.keras"
+        self.checkpoint = checkpoint or "generator.keras"
         self.dataset = dataset or "dennys246/rocky_mountain_snowpack"
         self.datatype = datatype or "magnified_profile"
         self.architecture = architecture or "generator"
@@ -128,7 +128,7 @@ class build:
     def dump(self):
         config = {
             "save_dir": self.save_dir,
-            "model_filename": self.model_filename,
+            "checkpoint": self.checkpoint,
             "dataset": self.dataset,
             "datatype": self.datatype,
             "architecture": self.architecture,
@@ -171,7 +171,7 @@ def load_gen_config(config_filepath, config = None):
     if not os.path.exists(config_filepath):
         split = config_filepath.split("/")
         gen_config.save_dir = gen_config.save_dir or "/".join(split[:-1]) + "/"
-        gen_config.model_filename = gen_config.model_filename or "generator.keras"
+        gen_config.checkpoint = gen_config.checkpoint or "generator.keras"
         gen_config.architecture = "generator"
     return gen_config 
 
@@ -196,7 +196,7 @@ def load_disc_config(config_filepath, config = None):
     if not os.path.exists(config_filepath):
         split = config_filepath.split("/")
         disc_config.save_dir = disc_config.save_dir or "/".join(split[:-1]) + "/"
-        disc_config.model_filename = disc_config.model_filename or "discriminator.keras"
+        disc_config.checkpoint = disc_config.checkpoint or "discriminator.keras"
         disc_config.architecture = "discriminator"
     return disc_config 
 
@@ -215,7 +215,7 @@ def configure_disc(config, args):
 
 def configure_generic(config, args):
     config['save_dir'] = args.save_dir
-    config['model_filename'] = args.model_filename
+    config['checkpoint'] = args.checkpoint
     config['rebuild'] = args.rebuild
 
     config['resolution'] = args.resolution

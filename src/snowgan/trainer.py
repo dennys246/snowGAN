@@ -22,7 +22,7 @@ class Trainer:
 
         # Attempt to load weights if they haven't been built yet
         if not self.gen.weights:
-            gen_weights_filepath = os.path.join(self.gen.config.save_dir, self.gen.config.model_filename)
+            gen_weights_filepath = os.path.join(self.gen.config.save_dir, self.gen.config.checkpoint)
             if os.path.exists(gen_weights_filepath):
                 print(gen_weights_filepath)
                 self.gen = keras.models.load_model(gen_weights_filepath)
@@ -39,7 +39,7 @@ class Trainer:
         # If weights haven't been initialized
         if not self.disc.weights:
             # Load them weights
-            disc_weights_filepath = os.path.join(self.disc.config.save_dir, self.disc.config.model_filename)
+            disc_weights_filepath = os.path.join(self.disc.config.save_dir, self.disc.config.checkpoint)
             if os.path.exists(disc_weights_filepath):
                 self.disc = keras.models.load_model(disc_weights_filepath)
                 print("Discriminator weights loaded successfully")

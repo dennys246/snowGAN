@@ -66,7 +66,7 @@ def load_generator(model_path):
 
     config = load_gen_config("/".join(split[:-1]) + "/generator.keras")
     
-    config.model_filename = split.pop() # Get the model filename from the path
+    config.checkpoint = split.pop() # Get the model filename from the path
     config.save_dir = "/".join(split) + "/"
 
     # Load the discriminator

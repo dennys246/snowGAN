@@ -26,11 +26,11 @@ def main():
     disc_config = load_disc_config(f"{args.save_dir}discriminator_config.json", disc_config)
 
     # Load the generator
-    generator = load_generator(f"{gen_config.save_dir}{gen_config.model_filename}")
+    generator = load_generator(f"{gen_config.save_dir}{gen_config.checkpoint}")
 
     if args.mode == "train":
         # Load the discriminator
-        discriminator = load_discriminator(f"{disc_config.save_dir}{disc_config.model_filename}")
+        discriminator = load_discriminator(f"{disc_config.save_dir}{disc_config.checkpoint}")
 
         # Call to trainer
         trainer = Trainer(generator, discriminator)

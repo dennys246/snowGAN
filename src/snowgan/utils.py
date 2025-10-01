@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument('--mode', type = str, choices = ["train", "generate"], required = True, help = "Mode to run the model in, either generate fake data or train the model")
     parser.add_argument('--dataset_dir', type = str, default = 'rmdig/rocky_mountain_snowpack', help = "Path to the Rocky Mountain Snowpack dataset, if none provided it will download directly from HF remote repository")
     parser.add_argument('--save_dir', type = str, default = "keras/snowgan/", help = "Path to save results where a pre-trained model may be found (defaults to keras/snowgan/)")
-    parser.add_argument('--model_filename', type = str, default = "generator.keras", help = "Path to a pre-trained model to load (defaults to None)")
+    
     parser.add_argument('--rebuild', type = bool, default = False, help = 'Whether to rebuild model from scratch (defaults to False)')
     
     parser.add_argument('--device', type = str, choices = ["cpu", "gpu"], default = "gpu", help = 'Device to run the model on (defaults to gpu)')
@@ -44,8 +44,9 @@ def parse_args():
     parser.add_argument('--epochs', type = int, default = 10, help = 'Epochs to train on (Defaults to 10)')
     parser.add_argument('--latent_dim', type = float, default = 100, help = 'Latent dimension size (Defaults to 100)')
 
-    parser.add_argument('--gen_kernel', type = list, default = [5, 5], help = 'Generator kernel size (Defaults to [5, 5])')
-    parser.add_argument('--gen_stride', type = list, default = [2, 2], help = 'Generator kernel stride (Defaults to [2, 2])')
+    parser.add_argument('--gen_checkpoint', type = str, default = "generator.keras", help = "Path to a pre-trained generator model to load")
+    parser.add_argument('--gen_kernel', type = list, default = [10, 10], help = 'Generator kernel size (Defaults to [5, 5])')
+    parser.add_argument('--gen_stride', type = list, default = [3, 3], help = 'Generator kernel stride (Defaults to [2, 2])')
     parser.add_argument('--gen_lr', type = float, default = 1e-3, help = 'Generators optimizer learning rate (Defaults to 0.001)')
     parser.add_argument('--gen_beta_1', type = float, default = 0.5, help = 'Generators optimizer adam beta one (Defaults to 0.5)')
     parser.add_argument('--gen_beta_2', type = float, default = 0.9, help = 'Generators optimizer adam beta two (Defaults to 0.9)')
@@ -53,8 +54,9 @@ def parse_args():
     parser.add_argument('--gen_steps', type = int, default = 3, help = 'Training steps the generator takes per batch (Defaults to 5)')
     parser.add_argument('--gen_filters', type = list, default = [1024, 512, 256, 128, 64], help = 'Generators filters per convolution layer (Defaults to [1024, 512, 256, 128, 64])')
     
-    parser.add_argument('--disc_kernel', type = list, default = [5, 5], help = 'Discriminator kernel size (Defaults to [5, 5])')
-    parser.add_argument('--disc_stride', type = list, default = [2, 2], help = 'Discriminator kernel stride (Defaults to [2, 2])')
+    parser.add_argument('--disc_checkpoint', type = str, default = "discriminator.keras", help = "Path to a pre-trained discriminator model to load")
+    parser.add_argument('--disc_kernel', type = list, default = [10, 10], help = 'Discriminator kernel size (Defaults to [5, 5])')
+    parser.add_argument('--disc_stride', type = list, default = [3, 3], help = 'Discriminator kernel stride (Defaults to [2, 2])')
     parser.add_argument('--disc_lr', type = float, default = 1e-4, help = 'Discriminators learning rate (Defaults to 0.0001)')
     parser.add_argument('--disc_beta_1', type = float, default = 0.5, help = 'Discriminators adam beta one (Defaults to 0.5)')
     parser.add_argument('--disc_beta_2', type = float, default = 0.9, help = 'Discriminators dam beta two (Defaults to 0.9)')
