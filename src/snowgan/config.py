@@ -6,7 +6,7 @@ config_template = {
             "checkpoint": None,
             "dataset": "dennys246/rocky_mountain_snowpack",
             "datatype": "magnified_profile",
-            "architecture": "generator",
+            "architecture": "discriminator",
             "resolution": (1024, 1024),
             "images": None,
             "trained_pool": None,
@@ -17,7 +17,7 @@ config_template = {
             "epochs": 10,
             "current_epoch": 0,
             "batch_size": 8,
-            "training_steps": 5,
+            "training_steps": 1,
             "learning_rate": 1e-4,
             "beta_1": 0.5,
             "beta_2": 0.9,
@@ -101,18 +101,18 @@ class build:
         self.validation_pool = validation_pool or None
         self.test_pool = test_pool or None
         self.model_history = model_history or None
-        self.n_samples = n_samples or 10
-        self.epochs = epochs or 10
-        self.current_epoch = current_epoch or 0
-        self.batch_size = batch_size or 8
-        self.training_steps = training_steps or 5
-        self.learning_rate = learning_rate or 1e-4
-        self.beta_1 = beta_1 or 0.5
-        self.beta_2 = beta_2 or 0.9
-        self.negative_slope = negative_slope or 0.25
-        self.lambda_gp = lambda_gp or None
-        self.latent_dim = latent_dim or 100
-        self.convolution_depth = convolution_depth or 5
+        self.n_samples = int(n_samples) or 10
+        self.epochs = int(epochs) or 10
+        self.current_epoch = int(current_epoch) or 0
+        self.batch_size = int(batch_size) or 8
+        self.training_steps = int(training_steps) or 5
+        self.learning_rate = float(learning_rate) or 1e-4
+        self.beta_1 = float(beta_1) or 0.5
+        self.beta_2 = float(beta_2) or 0.9
+        self.negative_slope = float(negative_slope) or 0.25
+        self.lambda_gp = float(lambda_gp) or None
+        self.latent_dim = int(latent_dim) or 100
+        self.convolution_depth = int(convolution_depth) or 5
         self.filter_counts = filter_counts or [64, 128, 256, 512, 1024]
         self.kernel_size = kernel_size or [5, 5]
         self.kernel_stride = kernel_stride or [2, 2]
@@ -178,14 +178,15 @@ def load_gen_config(config_filepath, config = None):
 def configure_gen(config, args):
     config = configure_generic(config, args)
 
-    config['kernel_size'] = args.gen_kernel
-    config['kernel_stride'] = args.gen_stride
-    config['learning_rate'] = args.gen_lr
-    config['beta_1'] = args.gen_beta_1
-    config['beta_2'] = args.gen_beta_2
-    config['negative_slope'] = args.gen_negative_slope
-    config['training_steps'] = args.gen_steps
-    config['filter_counts'] = args.gen_filters
+    if args.gen_checkpoint: config.checkpoint = args.gen_checkpoint
+    if args.gen_kernel: config.kernel_size = args.gen_kernel
+    if args.gen_stride: config.kernel_stride = args.gen_stride
+    if args.gen_lr: config.learning_rate = args.gen_lr
+    if args.gen_beta_1: config.beta_1 = args.gen_beta_1
+    if args.gen_beta_2: config.beta_2 = args.gen_beta_2
+    if args.gen_negative_slope: config.negative_slope = args.gen_negative_slope
+    if args.gen_steps: config.training_steps = args.gen_steps
+    if args.gen_filters: config.filter_counts = args.gen_filters
     return config
     
 
@@ -203,25 +204,25 @@ def load_disc_config(config_filepath, config = None):
 def configure_disc(config, args):
     config = configure_generic(config, args)
 
-    config['kernel_size'] = args.disc_kernel
-    config['kernel_stride'] = args.disc_stride
-    config['learning_rate'] = args.disc_lr
-    config['beta_1'] = args.disc_beta_1
-    config['beta_2'] = args.disc_beta_2
-    config['negative_slope'] = args.disc_negative_slope
-    config['training_steps'] = args.disc_steps
-    config['filter_counts'] = args.disc_filters
+    if args.disc_checkpoint: config.checkpoint = args.disc_checkpoint
+    if args.disc_kernel: config.kernel_size = args.disc_kernel
+    if args.disc_stride: config.kernel_stride = args.disc_stride
+    if args.disc_lr: config.learning_rate = args.disc_lr
+    if args.disc_beta_1: config.beta_1 = args.disc_beta_1
+    if args.disc_beta_2: config.beta_2 = args.disc_beta_2
+    if args.disc_negative_slope: config.negative_slope = args.disc_negative_slope
+    if args.disc_steps: config.training_steps = args.disc_steps
+    if args.disc_filters: config.filter_counts = args.disc_filters
     return config
 
 def configure_generic(config, args):
-    config['save_dir'] = args.save_dir
-    config['checkpoint'] = args.checkpoint
-    config['rebuild'] = args.rebuild
+    if args.save_dir: config.save_dir = args.save_dir
+    if args.rebuild: config.rebuild = args.rebuild
 
-    config['resolution'] = args.resolution
-    config['n_samples'] = args.n_samples
-    config['batch_size'] = args.batch_size
-    config['epochs'] = args.epochs
-    config['latent_dim'] = args.latent_dim
+    if args.resolution: config.resolution = args.resolution
+    if args.n_samples: config.n_samples = args.n_samples
+    if args.batch_size: config.batch_size = args.batch_size
+    if args.epochs: config.epochs = args.epochs
+    if args.latent_dim: config.latent_dim = args.latent_dim
     return config
 
