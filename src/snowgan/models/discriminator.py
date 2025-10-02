@@ -14,6 +14,11 @@ class Discriminator(tf.keras.Model):
         super(Discriminator, self).__init__()
         self.config = config
 
+        # Check if first is larger than last filter (i.e. discriminator setup) switch
+        if self.config.filter_counts[0] > self.config.filter_counts[-1]:
+            print(f"WARNING: Inverse filter counts detected, inverting filter counts - {self.config.filter_counts}")
+            self.config.filter_counts = self.config.filter_counts[::-1]
+
         self.resolution = self.config.resolution
         self.model = self._build_model()
         self.optimizer = self.get_optimizer()
@@ -53,15 +58,11 @@ class Discriminator(tf.keras.Model):
         wasserstein = tf.reduce_mean(synthetic_output) - tf.reduce_mean(real_output)
         return wasserstein + lambda_gp * gp
     
-def load_discriminator(model_path):
+def load_discriminator(model_path, config = None):
     split = model_path.split("/")
 
-    # Check if the model path exists
-    if not os.path.exists(model_path):
-        print(f"Model file not found at {model_path}, creating a rebuild discriminator model.")
-        os.makedirs("/".join(split[:-1]), exist_ok = True)
-
-    config = load_disc_config("/".join(split[:-1]) + "/discriminator.keras")
+    if not config:
+        config = load_disc_config("/".join(split[:-1]) + "/discriminator.keras")
 
     config.checkpoint = split.pop() # Get the model filename from the path
     config.save_dir = "/".join(split) + "/"

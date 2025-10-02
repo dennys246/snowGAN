@@ -16,8 +16,15 @@ class Generator(tf.keras.Model):
         super(Generator, self).__init__()
         self.config = config
 
-        # Check if default config, and reverse if so
+        # Check if using default config
+        if self.config.architecture == "discriminator":
+            self.config.architecture = "generator"
+            self.config.checkpoint = "keras/snowgan/generator.keras"
+            self.config.training_steps = 3
+
+        # Check if first is smaller than last filter (i.e. discriminator setup) switch
         if self.config.filter_counts[0] < self.config.filter_counts[-1]:
+            print(f"Inverse filter counts detected, inverting filter counts - {self.config.filter_counts}")
             self.config.filter_counts = self.config.filter_counts[::-1]
 
         self.model = self._build_model()
@@ -56,18 +63,16 @@ class Generator(tf.keras.Model):
         """
         return -tf.reduce_mean(synthetic_difference)
 
-def load_generator(model_path):
-    split = model_path.split("/")
-
-    # Check if the model path exists
-    if not os.path.exists(model_path):
-        print(f"Model file not found at {model_path}, creating a rebuild generator model.")
-        os.makedirs("/".join(split[:-1]), exist_ok = True)
-
-    config = load_gen_config("/".join(split[:-1]) + "/generator.keras")
+def load_generator(checkpoint, config = None):
     
-    config.checkpoint = split.pop() # Get the model filename from the path
-    config.save_dir = "/".join(split) + "/"
+
+    if not config:
+        split = checkpoint.split("/")
+        config = load_gen_config("/".join(split[:-1]) + "/generator.keras")
+    
+        # Get the model filename from the path
+        config.checkpoint = checkpoint
+        config.save_dir = "/".join(split) + "/"
 
     # Load the discriminator
     generator = Generator(config)
