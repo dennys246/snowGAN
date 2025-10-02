@@ -11,26 +11,26 @@ def main():
     args = parse_args()
 
     if args.save_dir is None or os.path.exists(args.save_dir) is False:
-        args.save_dir = str(get_repo_root()) + "/keras/snowgan/"
+        args.save_dir = os.path.join(os.getcwd(), "keras/snowgan/")
 
     if not os.path.exists(args.save_dir):
         print(f"Creating save directory: {args.save_dir}")
         os.makedirs(args.save_dir, exist_ok=True)
 
     gen_config = config_template
-    gen_config = configure_gen(gen_config, args)
     gen_config = load_gen_config(f"{args.save_dir}generator_config.json", gen_config)
+    gen_config = configure_gen(gen_config, args)
 
     disc_config = config_template
-    disc_config = configure_disc(disc_config, args)
     disc_config = load_disc_config(f"{args.save_dir}discriminator_config.json", disc_config)
+    disc_config = configure_disc(disc_config, args)
 
     # Load the generator
-    generator = load_generator(f"{gen_config.save_dir}{gen_config.checkpoint}")
+    generator = load_generator(gen_config.checkpoint, gen_config)
 
     if args.mode == "train":
         # Load the discriminator
-        discriminator = load_discriminator(f"{disc_config.save_dir}{disc_config.checkpoint}")
+        discriminator = load_discriminator(disc_config.checkpoint, disc_config)
 
         # Call to trainer
         trainer = Trainer(generator, discriminator)
