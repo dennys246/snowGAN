@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 
-from snowgan.config import load_disc_config
+from snowgan.config import build
 
 class Discriminator(tf.keras.Model):
     def __init__(self, config):
@@ -62,7 +62,7 @@ def load_discriminator(model_path, config = None):
     split = model_path.split("/")
 
     if not config:
-        config = load_disc_config("/".join(split[:-1]) + "/discriminator.keras")
+        config = build("/".join(split[:-1]) + "/discriminator.keras")
 
     config.checkpoint = split.pop() # Get the model filename from the path
     config.save_dir = "/".join(split) + "/"

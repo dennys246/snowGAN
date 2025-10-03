@@ -1,7 +1,7 @@
 import os
 import tensorflow as tf
 
-from snowgan.config import load_gen_config
+from snowgan.config import build
 
 class Generator(tf.keras.Model):
     def __init__(self, config):
@@ -15,12 +15,6 @@ class Generator(tf.keras.Model):
         
         super(Generator, self).__init__()
         self.config = config
-
-        # Check if using default config
-        if self.config.architecture == "discriminator":
-            self.config.architecture = "generator"
-            self.config.checkpoint = "keras/snowgan/generator.keras"
-            self.config.training_steps = 3
 
         # Check if first is smaller than last filter (i.e. discriminator setup) switch
         if self.config.filter_counts[0] < self.config.filter_counts[-1]:
@@ -65,10 +59,9 @@ class Generator(tf.keras.Model):
 
 def load_generator(checkpoint, config = None):
     
-
     if not config:
         split = checkpoint.split("/")
-        config = load_gen_config("/".join(split[:-1]) + "/generator.keras")
+        config = build("/".join(split[:-1]) + "/generator.keras")
     
         # Get the model filename from the path
         config.checkpoint = checkpoint

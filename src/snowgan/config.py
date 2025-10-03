@@ -2,12 +2,12 @@ import json, atexit, copy, os
 from glob import glob
 
 config_template = {
-            "save_dir": None,
-            "checkpoint": None,
+            "save_dir": "keras/snowgan/",
+            "checkpoint": "keras/snowgan/discriminator.keras",
             "dataset": "dennys246/rocky_mountain_snowpack",
             "datatype": "magnified_profile",
             "architecture": "discriminator",
-            "resolution": (1024, 1024),
+            "resolution": [1024, 1024],
             "images": None,
             "trained_pool": None,
             "validation_pool": None,
@@ -22,35 +22,31 @@ config_template = {
             "beta_1": 0.5,
             "beta_2": 0.9,
             "negative_slope": 0.25,
-            "lambda_gp": 10.0,
+            "lambda_gp": 1.0,
             "latent_dim": 100,
             "convolution_depth": 5,
             "filter_counts": [64, 128, 256, 512, 1024],
             "kernel_size": [5, 5],
-            "kernel_stride": (2, 2),
+            "kernel_stride": [2, 2],
             "final_activation": "tanh",
             "zero_padding": None,
             "padding": "same",
             "optimizer": "adam",
             "loss": None,
-            "train_ind": 0,
+            "train_ind": 390,
             "trained_data": [],
             "rebuild": False
 }
 
 class build:
-    def __init__(self, config_filepath, config = None):
-        if config is None:
-            config = config_template
-
+    def __init__(self, config_filepath):
         self.config_filepath = config_filepath
         if os.path.exists(config_filepath): # Try and load config if folder passed in
             print(f"Loading config file: {self.config_filepath}")
             config_json = self.load_config(self.config_filepath)
-            config_json['rebuild'] = False # Set to false if able to load a pre-existing model
         else:
             print("WARNING: Config not found, building from template...")
-            config_json = copy.deepcopy(config)
+            config_json = copy.deepcopy(config_template)
 
         self.configure(**config_json) # Build configuration
 
@@ -164,19 +160,16 @@ class build:
         }
         return config
 
-def load_gen_config(config_filepath, config = None):
-    # Configure the discriminator
-    gen_config = build(config_filepath, config)
-
-    if not os.path.exists(config_filepath):
-        split = config_filepath.split("/")
-        gen_config.save_dir = gen_config.save_dir or "/".join(split[:-1]) + "/"
-        gen_config.checkpoint = gen_config.checkpoint or "generator.keras"
-        gen_config.architecture = "generator"
-    return gen_config 
-
 def configure_gen(config, args):
     config = configure_generic(config, args)
+
+    # Check if using default config
+    if config.architecture == "discriminator":
+        print(f"Setting Gen Default!")
+        config.architecture = "generator"
+        config.checkpoint = "keras/snowgan/generator.keras"
+        config.training_steps = 3
+        config.learning_rate = 1e-2
 
     if args.gen_checkpoint: config.checkpoint = args.gen_checkpoint
     if args.gen_kernel: config.kernel_size = args.gen_kernel
@@ -188,18 +181,6 @@ def configure_gen(config, args):
     if args.gen_steps: config.training_steps = args.gen_steps
     if args.gen_filters: config.filter_counts = args.gen_filters
     return config
-    
-
-def load_disc_config(config_filepath, config = None):
-    # Configure the discriminator
-    disc_config = build(config_filepath, config)
-
-    if not os.path.exists(config_filepath):
-        split = config_filepath.split("/")
-        disc_config.save_dir = disc_config.save_dir or "/".join(split[:-1]) + "/"
-        disc_config.checkpoint = disc_config.checkpoint or "discriminator.keras"
-        disc_config.architecture = "discriminator"
-    return disc_config 
 
 def configure_disc(config, args):
     config = configure_generic(config, args)
