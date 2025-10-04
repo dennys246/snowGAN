@@ -12,22 +12,22 @@ from snowgan.data.dataset import DataManager
 class Trainer:
 
     def __init__(self, generator, discriminator):
-        print("Initializing trainer...")
+        
         # Generator and discriminator models
         self.gen = generator
+
+        print(f"Initializing trainer in cwd {os.getcwd()} with checkpoint {self.gen.config.checkpoint}...")
         
         # If model not yet built
         #if not self.gen.built:
         #    self.gen.build(self.gen.config.resolution)
 
         # Attempt to load weights if they haven't been built yet
-        if not self.gen.weights:
-            gen_weights_filepath = os.path.join(self.gen.config.save_dir, self.gen.config.checkpoint)
-            if os.path.exists(gen_weights_filepath):
-                self.gen = keras.models.load_model(gen_weights_filepath)
-                print(f"Generator weights loaded successfully from {gen_weights_filepath}")
-            else:
-                print("Generator saved weights not found, new model initialized")
+        if os.path.exists(self.gen.config.checkpoint):
+            self.gen.model = keras.models.load_model(self.gen.config.checkpoint)
+            print(f"Generator weights loaded successfully from {self.gen.config.checkpoint}")
+        else:
+            print("Generator saved weights not found, new model initialized")
 
         self.disc = discriminator
 
@@ -38,10 +38,9 @@ class Trainer:
         # If weights haven't been initialized
         if not self.disc.weights:
             # Load them weights
-            disc_weights_filepath = os.path.join(self.disc.config.save_dir, self.disc.config.checkpoint)
-            if os.path.exists(disc_weights_filepath):
-                self.disc = keras.models.load_model(disc_weights_filepath)
-                print(f"Discriminator weights loaded successfully from {disc_weights_filepath}")
+            if os.path.exists(self.disc.config.checkpoint):
+                self.disc.model = keras.models.load_model(self.disc.config.checkpoint)
+                print(f"Discriminator weights loaded successfully from {self.disc.config.checkpoint}")
             else:
                 print("Disciminator saved weights not found, new model initialized")
 
@@ -120,7 +119,7 @@ class Trainer:
                 
                 # Save the models state
                 if batch % 10 == 0:
-                    self.save_model(f"{self.save_dir}/synthetic_images/batch_{batch}/") # Need to consider more dynamic way to do this and remove old history
+                    self.save_model(f"{self.save_dir}/batch_{batch}/") # Need to consider more dynamic way to do this and remove old history
                 
                 batch += 1
 
