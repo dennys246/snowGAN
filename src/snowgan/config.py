@@ -18,16 +18,17 @@ config_template = {
             "current_epoch": 0,
             "batch_size": 8,
             "training_steps": 1,
-            "learning_rate": 1e-4,
+            "learning_rate": 1e-5,
             "beta_1": 0.5,
             "beta_2": 0.9,
             "negative_slope": 0.25,
-            "lambda_gp": 1.0,
+            "lambda_gp": 5.0,
             "latent_dim": 100,
             "convolution_depth": 5,
-            "filter_counts": [64, 128, 256, 512, 1024],
+            "filter_counts": [32, 64, 128, 256, 512],
             "kernel_size": [5, 5],
             "kernel_stride": [2, 2],
+            "batch_norm": False,
             "final_activation": "tanh",
             "zero_padding": None,
             "padding": "same",
@@ -74,7 +75,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -112,6 +113,7 @@ class build:
         self.filter_counts = filter_counts or [64, 128, 256, 512, 1024]
         self.kernel_size = kernel_size or [5, 5]
         self.kernel_stride = kernel_stride or [2, 2]
+        self.batch_norm = batch_norm or False
         self.final_activation = final_activation or "tanh"
         self.zero_padding = zero_padding or None
         self.padding = padding or "same"
@@ -149,6 +151,7 @@ class build:
             "filter_counts": self.filter_counts,
             "kernel_size": self.kernel_size,
             "kernel_stride": self.kernel_stride,
+            "batch_norm": self.batch_norm,
             "final_activation":self.final_activation,
             "zero_padding": self.zero_padding,
             "padding": self.padding,
@@ -169,11 +172,12 @@ def configure_gen(config, args):
         config.architecture = "generator"
         config.checkpoint = "keras/snowgan/generator.keras"
         config.training_steps = 3
-        config.learning_rate = 1e-2
+        config.learning_rate = 1e-4
 
     if args.gen_checkpoint: config.checkpoint = args.gen_checkpoint
     if args.gen_kernel: config.kernel_size = args.gen_kernel
     if args.gen_stride: config.kernel_stride = args.gen_stride
+    if args.gen_norm: config.batch_norm = args.gen_norm
     if args.gen_lr: config.learning_rate = args.gen_lr
     if args.gen_beta_1: config.beta_1 = args.gen_beta_1
     if args.gen_beta_2: config.beta_2 = args.gen_beta_2

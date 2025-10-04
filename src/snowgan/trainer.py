@@ -24,9 +24,8 @@ class Trainer:
         if not self.gen.weights:
             gen_weights_filepath = os.path.join(self.gen.config.save_dir, self.gen.config.checkpoint)
             if os.path.exists(gen_weights_filepath):
-                print(gen_weights_filepath)
                 self.gen = keras.models.load_model(gen_weights_filepath)
-                print("Generator weights loaded successfully")
+                print(f"Generator weights loaded successfully from {gen_weights_filepath}")
             else:
                 print("Generator saved weights not found, new model initialized")
 
@@ -42,7 +41,7 @@ class Trainer:
             disc_weights_filepath = os.path.join(self.disc.config.save_dir, self.disc.config.checkpoint)
             if os.path.exists(disc_weights_filepath):
                 self.disc = keras.models.load_model(disc_weights_filepath)
-                print("Discriminator weights loaded successfully")
+                print(f"Discriminator weights loaded successfully from {disc_weights_filepath}")
             else:
                 print("Disciminator saved weights not found, new model initialized")
 
@@ -143,7 +142,6 @@ class Trainer:
             self.gen.config.training_steps = gen_steps
 
         # Set batch size to the number of images passed in
-        print(f"Images: {images}")
         batch_size = tf.shape(images)[0] 
 
         # Generate noise for generator input

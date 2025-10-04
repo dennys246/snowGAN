@@ -35,15 +35,16 @@ class Generator(tf.keras.Model):
 
         for filters in self.config.filter_counts:
             x = tf.keras.layers.Conv2DTranspose(filters, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding)(x)
-            #x = tf.keras.layers.BatchNormalization()(x)
+            if self.config.batch_norm:
+                x = tf.keras.layers.BatchNormalization()(x)
             x = tf.keras.layers.LeakyReLU(self.config.negative_slope)(x)
 
         outputs = tf.keras.layers.Conv2DTranspose(3, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding, activation = self.config.final_activation, use_bias = False)(x)
 
         return tf.keras.Model(inputs, outputs, name = "Generator")
 
-    def get_optimizer(self, lr = 1e-4, beta_1 = 0.5, beta_2 = 0.9):
-        return tf.keras.optimizers.Adam(learning_rate = lr, beta_1 = beta_1, beta_2 = beta_2)
+    def get_optimizer(self):
+        return tf.keras.optimizers.Adam(learning_rate = self.config.learning_rate, beta_1 = self.config.beta_1, beta_2 = self.config.beta_2)
 
     def get_loss(self, synthetic_difference):
         """

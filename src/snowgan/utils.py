@@ -53,7 +53,8 @@ def parse_args():
     parser.add_argument('--gen_negative_slope', type = float, help = 'Generators negative slope for leaky relu (Defaults to 0.25)')
     parser.add_argument('--gen_steps', type = int, help = 'Training steps the generator takes per batch (Defaults to 5)')
     parser.add_argument('--gen_filters', type = list, help = 'Generators filters per convolution layer (Defaults to [1024, 512, 256, 128, 64])')
-    
+    parser.add_argument('--gen_norm', type = bool, help = "Generator batch normalization to prevent exploding gradients (default False)")
+
     parser.add_argument('--disc_checkpoint', type = str, help = "Path to a pre-trained discriminator model to load")
     parser.add_argument('--disc_kernel', type = list, help = 'Discriminator kernel size (Defaults to [5, 5])')
     parser.add_argument('--disc_stride', type = list, help = 'Discriminator kernel stride (Defaults to [2, 2])')
