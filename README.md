@@ -28,7 +28,7 @@ This is an actively evolving project, with only 1/2 of the dataset being utilize
 - Model outputs may not generalize well to very different domains.
 
 ## Training data
-- Dataset: Custom winter landscape dataset (~10,000 images)
+- Dataset: Custom winter landscape dataset (~3,000 images)
 - Source: Collected from open-source winter photography repositories
 - Preprocessing: Images resized to 256x256 RGB
 
