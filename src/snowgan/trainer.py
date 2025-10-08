@@ -36,13 +36,11 @@ class Trainer:
         #    self.disc.build(self.disc.config.resolution)
 
         # If weights haven't been initialized
-        if not self.disc.weights:
-            # Load them weights
-            if os.path.exists(self.disc.config.checkpoint):
-                self.disc.model = keras.models.load_model(self.disc.config.checkpoint)
-                print(f"Discriminator weights loaded successfully from {self.disc.config.checkpoint}")
-            else:
-                print("Disciminator saved weights not found, new model initialized")
+        if os.path.exists(self.disc.config.checkpoint):
+            self.disc.model = keras.models.load_model(self.disc.config.checkpoint)
+            print(f"Discriminator weights loaded successfully from {self.disc.config.checkpoint}")
+        else:
+            print("Disciminator saved weights not found, new model initialized")
 
         self.save_dir = self.gen.config.save_dir # Save dictory for the model and it's generated images
 
@@ -93,8 +91,8 @@ class Trainer:
             batched_images = glob(f"{self.gen.config.save_dir}/synthetic_images/*batch*.png")
             for batch_image in batched_images:
                 batch_number = int(batch_image.split('batch_')[1].split('_')[0])
-                if batch_number > batch:
-                    batch = batch_number
+                if batch_number >= batch:
+                    batch = batch_number + 1
 
             trainable_data = True
             while trainable_data:
@@ -145,12 +143,13 @@ class Trainer:
 
         # Generate noise for generator input
         noise = tf.random.normal([batch_size, self.gen.config.latent_dim])
-
+        print(f"Noise shape: {noise.shape}")
+        
         # Train the discriminator N times
         for _ in range(self.disc.config.training_steps): 
             # Initialize automatic differentiation during forward propogation
             with tf.GradientTape() as tape: 
-                print(f"Noise shape: {noise.shape}")
+                
                 # Generate a synthetic sample via forward propogation in the generator
                 synthetic_images = self.gen.model(noise, training=True) 
 

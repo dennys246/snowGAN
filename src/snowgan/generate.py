@@ -20,14 +20,7 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
 
     # Check if the destimation exists
     previously_generated = 0
-    if os.path.exists(save_dir): # If folder exists
-        # Check for previously generated images
-        previous_images = glob(f"{save_dir}synthetic_images/*.png")
-        for previous_image in previous_images:
-            image_number = int(previous_image.split("_")[-1][:-4])
-            if image_number > previously_generated:
-                previously_generated = image_number
-    else: # If not
+    if os.path.exists(save_dir) == False: # If folder doesn't exists
         print(f"Output folder doesn't exist, creating directory")
         os.makedirs(f"{save_dir}", exist_ok = True) # Create folder
 

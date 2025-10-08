@@ -46,7 +46,7 @@ class build:
             print(f"Loading config file: {self.config_filepath}")
             config_json = self.load_config(self.config_filepath)
         else:
-            print("WARNING: Config not found, building from template...")
+            print("WARNING: Config not found, building from default template...")
             config_json = copy.deepcopy(config_template)
 
         self.configure(**config_json) # Build configuration
@@ -110,7 +110,7 @@ class build:
         self.lambda_gp = float(lambda_gp) or None
         self.latent_dim = int(latent_dim) or 100
         self.convolution_depth = int(convolution_depth) or 5
-        self.filter_counts = filter_counts or [64, 128, 256, 512, 1024]
+        self.filter_counts = filter_counts or [32, 64, 128, 256, 512]
         self.kernel_size = kernel_size or [5, 5]
         self.kernel_stride = kernel_stride or [2, 2]
         self.batch_norm = batch_norm or False
@@ -175,29 +175,29 @@ def configure_gen(config, args):
         config.learning_rate = 1e-4
 
     if args.gen_checkpoint: config.checkpoint = args.gen_checkpoint
-    if args.gen_kernel: config.kernel_size = args.gen_kernel
-    if args.gen_stride: config.kernel_stride = args.gen_stride
+    if args.gen_kernel: config.kernel_size = [int(datum) for datum in args.gen_kernel.split(' ')]
+    if args.gen_stride: config.kernel_stride = [int(datum) for datum in args.gen_stride.split(' ')]
     if args.gen_norm: config.batch_norm = args.gen_norm
     if args.gen_lr: config.learning_rate = args.gen_lr
     if args.gen_beta_1: config.beta_1 = args.gen_beta_1
     if args.gen_beta_2: config.beta_2 = args.gen_beta_2
     if args.gen_negative_slope: config.negative_slope = args.gen_negative_slope
     if args.gen_steps: config.training_steps = args.gen_steps
-    if args.gen_filters: config.filter_counts = args.gen_filters
+    if args.gen_filters: config.filter_counts = [int(datum) for datum in args.gen_filters.split(' ')]
     return config
 
 def configure_disc(config, args):
     config = configure_generic(config, args)
 
     if args.disc_checkpoint: config.checkpoint = args.disc_checkpoint
-    if args.disc_kernel: config.kernel_size = args.disc_kernel
-    if args.disc_stride: config.kernel_stride = args.disc_stride
+    if args.disc_kernel: config.kernel_size = [int(datum) for datum in args.disc_kernel.split(' ')]
+    if args.disc_stride: config.kernel_stride = [int(datum) for datum in args.disc_stride.split(' ')]
     if args.disc_lr: config.learning_rate = args.disc_lr
     if args.disc_beta_1: config.beta_1 = args.disc_beta_1
     if args.disc_beta_2: config.beta_2 = args.disc_beta_2
     if args.disc_negative_slope: config.negative_slope = args.disc_negative_slope
     if args.disc_steps: config.training_steps = args.disc_steps
-    if args.disc_filters: config.filter_counts = args.disc_filters
+    if args.disc_filters: config.filter_counts = [int(datum) for datum in args.disc_filters.split('')]
     return config
 
 def configure_generic(config, args):

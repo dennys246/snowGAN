@@ -58,14 +58,14 @@ class Discriminator(tf.keras.Model):
         wasserstein = tf.reduce_mean(synthetic_output) - tf.reduce_mean(real_output)
         return wasserstein + lambda_gp * gp
     
-def load_discriminator(model_path, config = None):
-    split = model_path.split("/")
-
+def load_discriminator(checkpoint, config = None):
+    
     if not config:
+        split = checkpoint.split("/")
         config = build("/".join(split[:-1]) + "/discriminator.keras")
 
-    config.checkpoint = split.pop() # Get the model filename from the path
-    config.save_dir = "/".join(split) + "/"
+        config.checkpoint = split.pop() # Get the model filename from the path
+        config.save_dir = "/".join(split) + "/"
 
     # Load the discriminator
     discriminator = Discriminator(config)

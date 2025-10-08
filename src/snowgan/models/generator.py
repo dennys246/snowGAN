@@ -18,7 +18,7 @@ class Generator(tf.keras.Model):
 
         # Check if first is smaller than last filter (i.e. discriminator setup) switch
         if self.config.filter_counts[0] < self.config.filter_counts[-1]:
-            print(f"Inverse filter counts detected, inverting filter counts - {self.config.filter_counts}")
+            print(f"Inverse filter counts detected, inverting filter counts (Normal if using default config for generator) - {self.config.filter_counts}")
             self.config.filter_counts = self.config.filter_counts[::-1]
 
         self.model = self._build_model()
