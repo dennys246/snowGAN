@@ -64,8 +64,20 @@ def load_discriminator(checkpoint, config = None):
         split = checkpoint.split("/")
         config = build("/".join(split[:-1]) + "/discriminator.keras")
 
+<<<<<<< Updated upstream
         config.checkpoint = split.pop() # Get the model filename from the path
         config.save_dir = "/".join(split) + "/"
+=======
+    # Check if the model path exists
+    if not os.path.exists(model_path):
+        print(f"Model file not found at {model_path}, creating a rebuild discriminator model.")
+        os.makedirs("/".join(split[:-1]), exist_ok = True)
+
+    config = load_disc_config("/".join(split[:-1]) + "/discriminator.keras")
+
+    config.checkpoint = split.pop() # Get the model filename from the path
+    config.save_dir = "/".join(split) + "/"
+>>>>>>> Stashed changes
 
     # Load the discriminator
     discriminator = Discriminator(config)

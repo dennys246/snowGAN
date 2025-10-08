@@ -21,11 +21,19 @@ def main():
     disc_config = configure_disc(disc_config, args)
 
     # Load the generator
+<<<<<<< Updated upstream
     generator = load_generator(gen_config.checkpoint, gen_config)
 
     if args.mode == "train":
         # Load the discriminator
         discriminator = load_discriminator(disc_config.checkpoint, disc_config)
+=======
+    generator = load_generator(f"{gen_config.save_dir}{gen_config.checkpoint}")
+
+    if args.mode == "train":
+        # Load the discriminator
+        discriminator = load_discriminator(f"{disc_config.save_dir}{disc_config.checkpoint}")
+>>>>>>> Stashed changes
 
         # Call to trainer
         trainer = Trainer(generator, discriminator)

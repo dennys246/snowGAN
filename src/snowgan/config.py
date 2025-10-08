@@ -2,8 +2,13 @@ import json, atexit, copy, os
 from glob import glob
 
 config_template = {
+<<<<<<< Updated upstream
             "save_dir": "keras/snowgan/",
             "checkpoint": "keras/snowgan/discriminator.keras",
+=======
+            "save_dir": None,
+            "checkpoint": None,
+>>>>>>> Stashed changes
             "dataset": "dennys246/rocky_mountain_snowpack",
             "datatype": "magnified_profile",
             "architecture": "discriminator",
@@ -75,7 +80,11 @@ class build:
             config_json = config_template
         return config_json
 
+<<<<<<< Updated upstream
     def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
+=======
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
+>>>>>>> Stashed changes
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -163,6 +172,20 @@ class build:
         }
         return config
 
+<<<<<<< Updated upstream
+=======
+def load_gen_config(config_filepath, config = None):
+    # Configure the discriminator
+    gen_config = build(config_filepath, config)
+
+    if not os.path.exists(config_filepath):
+        split = config_filepath.split("/")
+        gen_config.save_dir = gen_config.save_dir or "/".join(split[:-1]) + "/"
+        gen_config.checkpoint = gen_config.checkpoint or "generator.keras"
+        gen_config.architecture = "generator"
+    return gen_config 
+
+>>>>>>> Stashed changes
 def configure_gen(config, args):
     config = configure_generic(config, args)
 
@@ -185,6 +208,21 @@ def configure_gen(config, args):
     if args.gen_steps: config.training_steps = args.gen_steps
     if args.gen_filters: config.filter_counts = [int(datum) for datum in args.gen_filters.split(' ')]
     return config
+<<<<<<< Updated upstream
+=======
+    
+
+def load_disc_config(config_filepath, config = None):
+    # Configure the discriminator
+    disc_config = build(config_filepath, config)
+
+    if not os.path.exists(config_filepath):
+        split = config_filepath.split("/")
+        disc_config.save_dir = disc_config.save_dir or "/".join(split[:-1]) + "/"
+        disc_config.checkpoint = disc_config.checkpoint or "discriminator.keras"
+        disc_config.architecture = "discriminator"
+    return disc_config 
+>>>>>>> Stashed changes
 
 def configure_disc(config, args):
     config = configure_generic(config, args)
@@ -201,8 +239,14 @@ def configure_disc(config, args):
     return config
 
 def configure_generic(config, args):
+<<<<<<< Updated upstream
     if args.save_dir: config.save_dir = args.save_dir
     if args.rebuild: config.rebuild = args.rebuild
+=======
+    config['save_dir'] = args.save_dir
+    config['checkpoint'] = args.checkpoint
+    config['rebuild'] = args.rebuild
+>>>>>>> Stashed changes
 
     if args.resolution: config.resolution = args.resolution
     if args.n_samples: config.n_samples = args.n_samples
