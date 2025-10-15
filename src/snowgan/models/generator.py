@@ -60,18 +60,13 @@ class Generator(tf.keras.Model):
 
 def load_generator(checkpoint, config = None):
     
-<<<<<<< Updated upstream
     if not config:
         split = checkpoint.split("/")
         config = build("/".join(split[:-1]) + "/generator.keras")
-    
-        # Get the model filename from the path
-        config.checkpoint = checkpoint
+        
+        config.checkpoint = checkpoint # Get the model filename from the path
         config.save_dir = "/".join(split) + "/"
-=======
-    config.checkpoint = split.pop() # Get the model filename from the path
-    config.save_dir = "/".join(split) + "/"
->>>>>>> Stashed changes
+
 
     # Load the discriminator
     generator = Generator(config)
