@@ -5,6 +5,55 @@ from pathlib import Path
 
 from snowgan.config import build as configuration
 
+def upscale_layer(layer, scale=2, method="nearest"):
+    """ 
+    Create an upscaled layer for fading in
+    """
+    if isinstance(scale, int):
+        scale_h, scale_w = scale, scale
+    else:
+        scale_h, scale_w = scale
+
+    shape = tf.shape(layer)
+    h = shape[1]
+    w = shape[2]
+
+    new_h = tf.cast(h * scale_h, tf.int32)
+    new_w = tf.cast(w * scale_w, tf.int32)
+    new_size = tf.stack([new_h, new_w])
+
+    resized = tf.image.resize(layer, size=new_size, method=method)
+    return tf.cast(resized, layer.dtype)
+
+def merge_last_layer(list_of_layers, alpha, scale=2):
+    """
+    Blend the last two layers in a progressive GAN:
+    - Upscales the second-to-last layer
+    - Blends it with the last layer by alpha ∈ [0,1]
+    """
+    upscaled = upscale_layer(list_of_layers[-2], scale)
+    alpha_t = tf.convert_to_tensor(alpha, dtype=tf.float32)
+    one_minus = tf.cast(1.0, tf.float32) - alpha_t
+    upscaled = tf.cast(upscaled, tf.float32)
+    curr = tf.cast(list_of_layers[-1], tf.float32)
+    blended = one_minus * upscaled + alpha_t * curr
+    return tf.cast(blended, curr.dtype)
+
+def compute_fade_alpha(current_step, fade_steps):
+    """
+    Compute alpha in [0, 1] for progressive fade‑in.
+
+    Args:
+        current_step: integer step within the current resolution phase.
+        fade_steps: number of steps to ramp alpha from 0 -> 1.
+
+    Returns:
+        tf.float32 alpha in [0, 1].
+    """
+    current = tf.cast(current_step, tf.float32)
+    total = tf.cast(tf.maximum(1, fade_steps), tf.float32)
+    return tf.clip_by_value(current / total, 0.0, 1.0)
+
 def configure_device(args):
     # Configure tensorflow
     if hasattr(args, "device") and args.device == "cpu":
@@ -43,6 +92,9 @@ def parse_args():
     parser.add_argument('--batch_size', type = int, default = 8, help = 'Batch size (Defaults to 8)')
     parser.add_argument('--epochs', type = int, default = 10, help = 'Epochs to train on (Defaults to 10)')
     parser.add_argument('--latent_dim', type = float, default = 100, help = 'Latent dimension size (Defaults to 100)')
+    # Use None defaults so resume can rely on persisted config unless explicitly overridden
+    parser.add_argument('--fade', type = bool, default = None, help = 'Enable progressive fade-in between resolutions (set True/False to override config)')
+    parser.add_argument('--fade_steps', type = int, default = None, help = 'Steps to ramp alpha from 0 to 1 during fade-in (override config if set)')
 
     parser.add_argument('--gen_checkpoint', type = str, help = "Path to a pre-trained generator model to load")
     parser.add_argument('--gen_kernel', type = str, help = 'Generator kernel size (Defaults to [5, 5])')
