@@ -8,6 +8,7 @@ from snowgan.losses import compute_gradient_penalty
 from snowgan.generate import generate, make_movie
 from snowgan.log import save_history, load_history
 from snowgan.data.dataset import DataManager
+from snowgan.utils import compute_fade_alpha
  
 class Trainer:
 
@@ -69,6 +70,8 @@ class Trainer:
         atexit.register(self.save_model)
 
         print("Trainer initialized...")
+        # Global step for fade scheduling (persisted in config)
+        self.global_step = int(getattr(self.gen.config, 'fade_step', 0) or 0)
 
     def train(self, batch_size = 8, epochs = 1):
         """
@@ -100,6 +103,10 @@ class Trainer:
                 # Load a new batch of subjects
                 print(f"Grab a batch of data")
                 x = self.dataset.batch(batch_size, 'magnified_profile') 
+                if x == None:
+                    self.gen.config.train_ind = 390
+                    x = self.dataset.batch(batch_size, 'magnified_profile') 
+                    
                 print(f"Data batched")
                 if x is None:
                     print(f"Training Epoch Complete")
@@ -151,8 +158,15 @@ class Trainer:
             # Initialize automatic differentiation during forward propogation
             with tf.GradientTape() as tape: 
                 
-                # Generate a synthetic sample via forward propogation in the generator
-                synthetic_images = self.gen.model(noise, training=True) 
+                # Generate a synthetic sample via forward propagation in the generator
+                if getattr(self.gen.config, 'fade', False) and (getattr(self.gen, 'fade_endpoints', None) is not None):
+                    fade_total = max(1, int(getattr(self.gen.config, 'fade_steps', 1)))
+                    alpha = compute_fade_alpha(self.global_step % fade_total, fade_total)
+                    prev_up, curr_img = self.gen.fade_endpoints(noise, training=True)
+                    alpha = tf.cast(alpha, curr_img.dtype)
+                    synthetic_images = (1.0 - alpha) * prev_up + alpha * curr_img
+                else:
+                    synthetic_images = self.gen.model(noise, training=True)
 
                 # Forward propogate real & synethic images to the discriminator
                 output = self.disc.model(images, training=True) 
@@ -176,19 +190,45 @@ class Trainer:
             # Initialize automtic differentiation during forward propogation
             with tf.GradientTape() as tape:
                 # Forward pass noise through the generator to create synthetic images
-                synthetic_images = self.gen.model(noise, training=True)
+                use_fade = getattr(self.gen.config, 'fade', False) and (getattr(self.gen, 'fade_endpoints', None) is not None)
+                if use_fade:
+                    fade_total = max(1, int(getattr(self.gen.config, 'fade_steps', 1)))
+                    alpha = compute_fade_alpha(self.global_step % fade_total, fade_total)
+                    prev_up, curr_img = self.gen.fade_endpoints(noise, training=True)
+                    alpha = tf.cast(alpha, curr_img.dtype)
+                    synthetic_images = (1.0 - alpha) * prev_up + alpha * curr_img
+                else:
+                    synthetic_images = self.gen.model(noise, training=True)
                 # Forward pass generator outputs through the discriminator for loss calculation
                 synthetic_output = self.disc.model(synthetic_images, training=True)
                 # Calculate generator loss for backpropogation by calculating mean of disc output
                 gen_loss = self.gen.get_loss(synthetic_output)
             # Backpropogate to calculate gradient of trainable parameters given loss
-            gen_gradients = tape.gradient(gen_loss, self.gen.model.trainable_variables)
+            var_list = list(self.gen.model.trainable_variables)
+            # If fading, also update fade endpoint layers (e.g., toRGB_prev)
+            if use_fade and hasattr(self.gen, 'fade_endpoints') and self.gen.fade_endpoints is not None:
+                # Extend with unique vars from fade_endpoints by variable name (TF variables lack ref())
+                existing_names = {v.name for v in var_list}
+                fade_vars = [v for v in self.gen.fade_endpoints.trainable_variables if v.name not in existing_names]
+                var_list.extend(fade_vars)
+
+            gen_gradients = tape.gradient(gen_loss, var_list)
             # Apply the gradients and update trainable parameters (w, b, etc.)
-            self.gen.optimizer.apply_gradients(zip(gen_gradients, self.gen.model.trainable_variables))
+            self.gen.optimizer.apply_gradients(zip(gen_gradients, var_list))
 
         # Record loss of models to their histories - Should this be within training loops? Might be deceptive if not
         self.loss['gen'].append(gen_loss)
         self.loss['disc'].append(disc_loss)
+        # Increment global step after a full train step
+        self.global_step += 1
+        # Persist fade progress to config so training can resume mid-fade
+        if hasattr(self.gen, 'config'):
+            try:
+                self.gen.config.fade_step = int(self.global_step)
+                # Save immediately for resilience to interruptions
+                self.gen.config.save_config()
+            except Exception as e:
+                print(f"Warning: failed to persist fade_step: {e}")
 
     def save_model(self, path = None):
         """
