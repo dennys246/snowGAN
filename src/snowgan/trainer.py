@@ -23,22 +23,12 @@ class Trainer:
         #    self.gen.build(self.gen.config.resolution)
 
         # Attempt to load weights if they haven't been built yet
-<<<<<<< Updated upstream
         if os.path.exists(self.gen.config.checkpoint):
             self.gen.model = keras.models.load_model(self.gen.config.checkpoint)
             print(f"Generator weights loaded successfully from {self.gen.config.checkpoint}")
         else:
             print("Generator saved weights not found, new model initialized")
-=======
-        if not self.gen.weights:
-            gen_weights_filepath = os.path.join(self.gen.config.save_dir, self.gen.config.checkpoint)
-            if os.path.exists(gen_weights_filepath):
-                print(gen_weights_filepath)
-                self.gen = keras.models.load_model(gen_weights_filepath)
-                print("Generator weights loaded successfully")
-            else:
-                print("Generator saved weights not found, new model initialized")
->>>>>>> Stashed changes
+
 
         self.disc = discriminator
 
@@ -47,22 +37,11 @@ class Trainer:
         #    self.disc.build(self.disc.config.resolution)
 
         # If weights haven't been initialized
-<<<<<<< Updated upstream
         if os.path.exists(self.disc.config.checkpoint):
             self.disc.model = keras.models.load_model(self.disc.config.checkpoint)
             print(f"Discriminator weights loaded successfully from {self.disc.config.checkpoint}")
         else:
             print("Disciminator saved weights not found, new model initialized")
-=======
-        if not self.disc.weights:
-            # Load them weights
-            disc_weights_filepath = os.path.join(self.disc.config.save_dir, self.disc.config.checkpoint)
-            if os.path.exists(disc_weights_filepath):
-                self.disc = keras.models.load_model(disc_weights_filepath)
-                print("Discriminator weights loaded successfully")
-            else:
-                print("Disciminator saved weights not found, new model initialized")
->>>>>>> Stashed changes
 
         self.save_dir = self.gen.config.save_dir # Save dictory for the model and it's generated images
 
