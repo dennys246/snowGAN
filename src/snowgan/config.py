@@ -16,17 +16,17 @@ config_template = {
             "n_samples": 10,
             "epochs": 10,
             "current_epoch": 0,
-            "batch_size": 8,
+            "batch_size": 2,
             "training_steps": 1,
-            "learning_rate": 1e-5,
+            "learning_rate": 1e-4,
             "beta_1": 0.5,
             "beta_2": 0.9,
             "negative_slope": 0.25,
             "lambda_gp": 5.0,
-            "latent_dim": 100,
+            "latent_dim": 256,
             "convolution_depth": 5,
             "filter_counts": [32, 64, 128, 256, 512],
-            "kernel_size": [5, 5],
+            "kernel_size": [3, 3],
             "kernel_stride": [2, 2],
             "batch_norm": False,
             "final_activation": "tanh",
@@ -36,7 +36,10 @@ config_template = {
             "loss": None,
             "train_ind": 390,
             "trained_data": [],
-            "rebuild": False
+            "rebuild": False,
+            "fade": True,
+            "fade_steps": 50000,
+            "fade_step": 0
 }
 
 class build:
@@ -75,7 +78,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -122,6 +125,10 @@ class build:
         self.train_ind = train_ind or 0
         self.trained_data = trained_data or []
         self.rebuild = rebuild or False
+        # Progressive fade configuration and persisted progress
+        self.fade = bool(fade)
+        self.fade_steps = int(fade_steps) if fade_steps is not None else 10000
+        self.fade_step = int(fade_step) if fade_step is not None else 0
 
     def dump(self):
         config = {
@@ -159,7 +166,10 @@ class build:
             "loss": self.loss,
             "train_ind": self.train_ind,
             "trained_data": self.trained_data,
-            "rebuild": self.rebuild
+            "rebuild": self.rebuild,
+            "fade": self.fade,
+            "fade_steps": self.fade_steps,
+            "fade_step": self.fade_step
         }
         return config
 
@@ -184,7 +194,7 @@ def configure_gen(config, args):
         print(f"Setting Gen Default!")
         config.architecture = "generator"
         config.checkpoint = "keras/snowgan/generator.keras"
-        config.training_steps = 3
+        config.training_steps = 1
         config.learning_rate = 1e-4
 
     if args.gen_checkpoint: config.checkpoint = args.gen_checkpoint
@@ -222,8 +232,16 @@ def configure_disc(config, args):
     if args.disc_beta_1: config.beta_1 = args.disc_beta_1
     if args.disc_beta_2: config.beta_2 = args.disc_beta_2
     if args.disc_negative_slope: config.negative_slope = args.disc_negative_slope
-    if args.disc_steps: config.training_steps = args.disc_steps
-    if args.disc_filters: config.filter_counts = [int(datum) for datum in args.disc_filters.split('')]
+    if args.disc_steps:
+        config.training_steps = args.disc_steps
+    else:
+        # Favor a stronger discriminator at 1024x1024
+        config.training_steps = config.training_steps or 5
+    if args.disc_filters: config.filter_counts = [int(datum) for datum in args.disc_filters.split(' ')]
+    if config.learning_rate is None or config.learning_rate == 0:
+        config.learning_rate = 1e-4
+    if config.lambda_gp is None:
+        config.lambda_gp = 10.0
     return config
 
 def configure_generic(config, args):
@@ -235,5 +253,8 @@ def configure_generic(config, args):
     if args.batch_size: config.batch_size = args.batch_size
     if args.epochs: config.epochs = args.epochs
     if args.latent_dim: config.latent_dim = args.latent_dim
+    # Progressive fade options
+    if args.fade: config.fade = args.fade
+    if args.fade_steps: config.fade_steps = args.fade_steps
     return config
 
