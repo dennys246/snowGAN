@@ -34,6 +34,7 @@ def merge_last_layer(list_of_layers, alpha, scale=2):
     upscaled = upscale_layer(list_of_layers[-2], scale)
     alpha_t = tf.convert_to_tensor(alpha, dtype=tf.float32)
     one_minus = tf.cast(1.0, tf.float32) - alpha_t
+    
     upscaled = tf.cast(upscaled, tf.float32)
     curr = tf.cast(list_of_layers[-1], tf.float32)
     blended = one_minus * upscaled + alpha_t * curr
@@ -64,8 +65,7 @@ def configure_device(args):
         if gpus:
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
-
-    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+    # Do not force-disable GPUs unconditionally; respect the selected device
     if args.xla == True: # Use XLA computation for faster runtime operations
         tf.config.optimizer.set_jit(True)  
     if args.mixed_precision == True : # Use mixed precision for faster training
@@ -92,6 +92,7 @@ def parse_args():
     parser.add_argument('--batch_size', type = int, default = 8, help = 'Batch size (Defaults to 8)')
     parser.add_argument('--epochs', type = int, default = 10, help = 'Epochs to train on (Defaults to 10)')
     parser.add_argument('--latent_dim', type = float, default = 100, help = 'Latent dimension size (Defaults to 100)')
+    parser.add_argument('--cleanup_milestone', type = int, default = 1000, help = 'Frequency (in batches) to save checkpoints and cleanup older batches (Defaults to 1000)')
     # Use None defaults so resume can rely on persisted config unless explicitly overridden
     parser.add_argument('--fade', type = bool, default = None, help = 'Enable progressive fade-in between resolutions (set True/False to override config)')
     parser.add_argument('--fade_steps', type = int, default = None, help = 'Steps to ramp alpha from 0 to 1 during fade-in (override config if set)')
