@@ -1,9 +1,10 @@
 import os
 import tensorflow as tf
+import keras
 
 from snowgan.config import build
 
-class Discriminator(tf.keras.Model):
+class Discriminator(keras.Model):
     def __init__(self, config):
         """
         Wasserstein GAN Discriminator: distinguishes real vs. synthetic snow images.
@@ -27,20 +28,20 @@ class Discriminator(tf.keras.Model):
         return self.model(inputs, training=training)
 
     def _build_model(self):
-        inputs = tf.keras.Input(shape=(self.config.resolution[0], self.config.resolution[1], 3))
+        inputs = keras.Input(shape=(self.config.resolution[0], self.config.resolution[1], 3))
         x = inputs
 
         for filters in self.config.filter_counts:
-            x = tf.keras.layers.Conv2D(filters, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding)(x)
-            x = tf.keras.layers.LeakyReLU(negative_slope = self.config.negative_slope)(x)
+            x = keras.layers.Conv2D(filters, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding)(x)
+            x = keras.layers.LeakyReLU(negative_slope = self.config.negative_slope)(x)
 
-        x = tf.keras.layers.Flatten()(x)
-        outputs = tf.keras.layers.Dense(1)(x)  # No activation for WGAN
+        x = keras.layers.Flatten()(x)
+        outputs = keras.layers.Dense(1)(x)  # No activation for WGAN
 
-        return tf.keras.Model(inputs, outputs, name="Discriminator")
+        return keras.Model(inputs, outputs, name="Discriminator")
 
     def get_optimizer(self):
-        return tf.keras.optimizers.Adam(learning_rate = self.config.learning_rate, beta_1 = self.config.beta_1, beta_2 = self.config.beta_2)
+        return keras.optimizers.Adam(learning_rate = self.config.learning_rate, beta_1 = self.config.beta_1, beta_2 = self.config.beta_2)
 
     def get_loss(self, real_output, synthetic_output, gp, lambda_gp):
         """

@@ -46,7 +46,7 @@ def load_history(save_dir):
             loss["disc"] = [float(line.strip()) for line in file if line.strip()]
 
     # Load trained data
-    if os.path.exists(trained_path):
+    if os.path.exists(trained_path): 
         with open(trained_path, "r") as file:
             trained_data = [line.strip() for line in file if line.strip()]
         

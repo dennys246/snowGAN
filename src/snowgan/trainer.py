@@ -1,5 +1,6 @@
-import os, atexit, keras
+import os, atexit, re, shutil
 import tensorflow as tf
+from tensorflow import keras
 import numpy as np
 from matplotlib import pyplot as plt
 from glob import glob
@@ -8,6 +9,7 @@ from snowgan.losses import compute_gradient_penalty
 from snowgan.generate import generate, make_movie
 from snowgan.log import save_history, load_history
 from snowgan.data.dataset import DataManager
+from snowgan.utils import compute_fade_alpha
  
 class Trainer:
 
@@ -24,8 +26,13 @@ class Trainer:
 
         # Attempt to load weights if they haven't been built yet
         if os.path.exists(self.gen.config.checkpoint):
-            self.gen.model = keras.models.load_model(self.gen.config.checkpoint)
-            print(f"Generator weights loaded successfully from {self.gen.config.checkpoint}")
+            try:
+                loaded_gen = keras.models.load_model(self.gen.config.checkpoint)
+                # Load weights into the prebuilt model to preserve shared layers used by fade_endpoints
+                self.gen.model.set_weights(loaded_gen.get_weights())
+                print(f"Generator weights loaded successfully from {self.gen.config.checkpoint}")
+            except Exception as e:
+                print(f"Warning: could not load generator model via set_weights: {e}. Using freshly initialized weights.")
         else:
             print("Generator saved weights not found, new model initialized")
 
@@ -38,8 +45,12 @@ class Trainer:
 
         # If weights haven't been initialized
         if os.path.exists(self.disc.config.checkpoint):
-            self.disc.model = keras.models.load_model(self.disc.config.checkpoint)
-            print(f"Discriminator weights loaded successfully from {self.disc.config.checkpoint}")
+            try:
+                loaded_disc = keras.models.load_model(self.disc.config.checkpoint)
+                self.disc.model.set_weights(loaded_disc.get_weights())
+                print(f"Discriminator weights loaded successfully from {self.disc.config.checkpoint}")
+            except Exception as e:
+                print(f"Warning: could not load discriminator model via set_weights: {e}. Using freshly initialized weights.")
         else:
             print("Disciminator saved weights not found, new model initialized")
 
@@ -48,6 +59,17 @@ class Trainer:
         self.batch_size = self.gen.config.batch_size # Number of images to load in per training batch
 
         self.n_samples = self.gen.config.n_samples # Number of synthetic images to generate after training
+        cleanup_raw = getattr(self.gen.config, "cleanup_milestone", 1000)
+        try:
+            cleanup_value = int(cleanup_raw)
+        except (TypeError, ValueError):
+            cleanup_value = 1000
+        self.cleanup_milestone = max(0, cleanup_value)
+        if hasattr(self.gen.config, "cleanup_milestone"):
+            self.gen.config.cleanup_milestone = self.cleanup_milestone
+        if hasattr(self.disc.config, "cleanup_milestone"):
+            self.disc.config.cleanup_milestone = self.cleanup_milestone
+        self._save_interval = self.cleanup_milestone if self.cleanup_milestone > 0 else 1000
 
             # Setup optimizers from config or defaults
         self.gen_optimizer = tf.keras.optimizers.Adam(learning_rate=self.gen.config.learning_rate,
@@ -69,6 +91,12 @@ class Trainer:
         atexit.register(self.save_model)
 
         print("Trainer initialized...")
+        # Global step for fade scheduling (persisted in config)
+        gen_step = int(getattr(self.gen.config, 'fade_step', 0) or 0)
+        disc_step = int(getattr(self.disc.config, 'fade_step', 0) or 0)
+        self.global_step = max(gen_step, disc_step)
+        # Keep generator/discriminator configs aligned without forcing a disk write on init
+        self._sync_fade_progress(persist=False)
 
     def train(self, batch_size = 8, epochs = 1):
         """
@@ -100,6 +128,10 @@ class Trainer:
                 # Load a new batch of subjects
                 print(f"Grab a batch of data")
                 x = self.dataset.batch(batch_size, 'magnified_profile') 
+                if x is None:
+                    self.gen.config.train_ind = 390
+                    x = self.dataset.batch(batch_size, 'magnified_profile') 
+                    
                 print(f"Data batched")
                 if x is None:
                     print(f"Training Epoch Complete")
@@ -117,8 +149,10 @@ class Trainer:
                     _ = generate(self.gen, count = self.n_samples, seed_size = self.gen.config.latent_dim, save_dir = f"{self.save_dir}/synthetic_images/", filename_prefix = f'batch_{batch}_synthetic')
                 
                 # Save the models state
-                if batch % 10 == 0:
-                    self.save_model(f"{self.save_dir}/batch_{batch}/") # Need to consider more dynamic way to do this and remove old history
+                if batch % self._save_interval == 0:
+                    self.save_model(f"{self.save_dir}/batch_{batch}/")
+                    if self.cleanup_milestone > 0 and batch % self.cleanup_milestone == 0:
+                        self._cleanup_saved_batches(100)
                 
                 batch += 1
 
@@ -151,8 +185,15 @@ class Trainer:
             # Initialize automatic differentiation during forward propogation
             with tf.GradientTape() as tape: 
                 
-                # Generate a synthetic sample via forward propogation in the generator
-                synthetic_images = self.gen.model(noise, training=True) 
+                # Generate a synthetic sample via forward propagation in the generator
+                if getattr(self.gen.config, 'fade', False) and (getattr(self.gen, 'fade_endpoints', None) is not None):
+                    fade_total = max(1, int(getattr(self.gen.config, 'fade_steps', 1)))
+                    alpha = compute_fade_alpha(self.global_step % fade_total, fade_total)
+                    prev_up, curr_img = self.gen.fade_endpoints(noise, training=True)
+                    alpha = tf.cast(alpha, curr_img.dtype)
+                    synthetic_images = (1.0 - alpha) * prev_up + alpha * curr_img
+                else:
+                    synthetic_images = self.gen.model(noise, training=True)
 
                 # Forward propogate real & synethic images to the discriminator
                 output = self.disc.model(images, training=True) 
@@ -176,19 +217,39 @@ class Trainer:
             # Initialize automtic differentiation during forward propogation
             with tf.GradientTape() as tape:
                 # Forward pass noise through the generator to create synthetic images
-                synthetic_images = self.gen.model(noise, training=True)
+                use_fade = getattr(self.gen.config, 'fade', False) and (getattr(self.gen, 'fade_endpoints', None) is not None)
+                if use_fade:
+                    fade_total = max(1, int(getattr(self.gen.config, 'fade_steps', 1)))
+                    alpha = compute_fade_alpha(self.global_step % fade_total, fade_total)
+                    prev_up, curr_img = self.gen.fade_endpoints(noise, training=True)
+                    alpha = tf.cast(alpha, curr_img.dtype)
+                    synthetic_images = (1.0 - alpha) * prev_up + alpha * curr_img
+                else:
+                    synthetic_images = self.gen.model(noise, training=True)
                 # Forward pass generator outputs through the discriminator for loss calculation
                 synthetic_output = self.disc.model(synthetic_images, training=True)
                 # Calculate generator loss for backpropogation by calculating mean of disc output
                 gen_loss = self.gen.get_loss(synthetic_output)
             # Backpropogate to calculate gradient of trainable parameters given loss
-            gen_gradients = tape.gradient(gen_loss, self.gen.model.trainable_variables)
+            var_list = list(self.gen.model.trainable_variables)
+            # If fading, also update fade endpoint layers (e.g., toRGB_prev)
+            if use_fade and hasattr(self.gen, 'fade_endpoints') and self.gen.fade_endpoints is not None:
+                # Extend with unique vars from fade_endpoints by variable name (TF variables lack ref())
+                existing_names = {v.name for v in var_list}
+                fade_vars = [v for v in self.gen.fade_endpoints.trainable_variables if v.name not in existing_names]
+                var_list.extend(fade_vars)
+
+            gen_gradients = tape.gradient(gen_loss, var_list)
             # Apply the gradients and update trainable parameters (w, b, etc.)
-            self.gen.optimizer.apply_gradients(zip(gen_gradients, self.gen.model.trainable_variables))
+            self.gen.optimizer.apply_gradients(zip(gen_gradients, var_list))
 
         # Record loss of models to their histories - Should this be within training loops? Might be deceptive if not
         self.loss['gen'].append(gen_loss)
         self.loss['disc'].append(disc_loss)
+        # Increment global step after a full train step
+        self.global_step += 1
+        # Persist fade progress across generator/discriminator configs for resume support
+        self._sync_fade_progress(persist=True)
 
     def save_model(self, path = None):
         """
@@ -242,5 +303,83 @@ class Trainer:
         plt.xlabel("Epochs")
         plt.savefig(os.path.join(self.save_dir, 'history.png'))
         plt.close()
+
+    @staticmethod
+    def _extract_batch_number(path: str):
+        basename = os.path.basename(os.path.normpath(path))
+        match = re.search(r"batch_(\d+)", basename)
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
+    def _cleanup_saved_batches(self, keep_every: int):
+        """
+        Remove checkpoint directories for batches that do not align with the cleanup milestone
+        and trim only the seven most recent synthetic samples for those batches.
+        """
+        if keep_every <= 0:
+            return
+
+        removed_checkpoints = 0
+        trimmed_images = 0
+        synthetic_dir = os.path.join(self.save_dir, "synthetic_images")
+
+        for checkpoint_path in glob(os.path.join(self.save_dir, "batch_*")):
+            if not os.path.isdir(checkpoint_path):
+                continue
+            batch_number = self._extract_batch_number(checkpoint_path)
+            if batch_number is None or batch_number % keep_every == 0:
+                continue
+
+            shutil.rmtree(checkpoint_path, ignore_errors=True)
+            removed_checkpoints += 1
+
+            if os.path.isdir(synthetic_dir):
+                pattern = os.path.join(synthetic_dir, f"batch_{batch_number}_synthetic_*.png")
+                indexed_images = []
+                for image_path in glob(pattern):
+                    stem = os.path.splitext(os.path.basename(image_path))[0]
+                    try:
+                        image_index = int(stem.split("_")[-1])
+                    except (ValueError, IndexError):
+                        continue
+                    indexed_images.append((image_index, image_path))
+                indexed_images.sort(key=lambda item: item[0])
+                for _, image_path in indexed_images[-7:]:
+                    try:
+                        os.remove(image_path)
+                        trimmed_images += 1
+                    except (FileNotFoundError, ValueError):
+                        continue
+
+        if removed_checkpoints or trimmed_images:
+            print(
+                f"Cleanup milestone reached (keep every {keep_every} batches): "
+                f"removed {removed_checkpoints} checkpoint directories, trimmed {trimmed_images} synthetic images."
+            )
+
+    def _sync_fade_progress(self, persist=True):
+        """
+        Mirror fade progress/targets to both generator and discriminator configs so training can resume seamlessly.
+        """
+        target_step = int(self.global_step)
+        gen_cfg = getattr(self.gen, 'config', None)
+        disc_cfg = getattr(self.disc, 'config', None)
+
+        for cfg, label in ((gen_cfg, "generator"), (disc_cfg, "discriminator")):
+            if cfg is None:
+                continue
+            try:
+                cfg.fade_step = target_step
+                if gen_cfg is not None and cfg is not gen_cfg and hasattr(cfg, 'fade_steps') and hasattr(gen_cfg, 'fade_steps'):
+                    if cfg.fade_steps != gen_cfg.fade_steps:
+                        cfg.fade_steps = gen_cfg.fade_steps
+                if persist:
+                    cfg.save_config()
+            except Exception as e:
+                print(f"Warning: failed to persist fade configuration for {label}: {e}")
 
 
