@@ -1,5 +1,6 @@
-import os, atexit, keras
+import os, atexit, re, shutil
 import tensorflow as tf
+from tensorflow import keras
 import numpy as np
 from matplotlib import pyplot as plt
 from glob import glob
@@ -58,6 +59,17 @@ class Trainer:
         self.batch_size = self.gen.config.batch_size # Number of images to load in per training batch
 
         self.n_samples = self.gen.config.n_samples # Number of synthetic images to generate after training
+        cleanup_raw = getattr(self.gen.config, "cleanup_milestone", 1000)
+        try:
+            cleanup_value = int(cleanup_raw)
+        except (TypeError, ValueError):
+            cleanup_value = 1000
+        self.cleanup_milestone = max(0, cleanup_value)
+        if hasattr(self.gen.config, "cleanup_milestone"):
+            self.gen.config.cleanup_milestone = self.cleanup_milestone
+        if hasattr(self.disc.config, "cleanup_milestone"):
+            self.disc.config.cleanup_milestone = self.cleanup_milestone
+        self._save_interval = self.cleanup_milestone if self.cleanup_milestone > 0 else 1000
 
             # Setup optimizers from config or defaults
         self.gen_optimizer = tf.keras.optimizers.Adam(learning_rate=self.gen.config.learning_rate,
@@ -80,7 +92,11 @@ class Trainer:
 
         print("Trainer initialized...")
         # Global step for fade scheduling (persisted in config)
-        self.global_step = int(getattr(self.gen.config, 'fade_step', 0) or 0)
+        gen_step = int(getattr(self.gen.config, 'fade_step', 0) or 0)
+        disc_step = int(getattr(self.disc.config, 'fade_step', 0) or 0)
+        self.global_step = max(gen_step, disc_step)
+        # Keep generator/discriminator configs aligned without forcing a disk write on init
+        self._sync_fade_progress(persist=False)
 
     def train(self, batch_size = 8, epochs = 1):
         """
@@ -133,8 +149,10 @@ class Trainer:
                     _ = generate(self.gen, count = self.n_samples, seed_size = self.gen.config.latent_dim, save_dir = f"{self.save_dir}/synthetic_images/", filename_prefix = f'batch_{batch}_synthetic')
                 
                 # Save the models state
-                if batch % 10 == 0:
-                    self.save_model(f"{self.save_dir}/batch_{batch}/") # Need to consider more dynamic way to do this and remove old history
+                if batch % self._save_interval == 0:
+                    self.save_model(f"{self.save_dir}/batch_{batch}/")
+                    if self.cleanup_milestone > 0 and batch % self.cleanup_milestone == 0:
+                        self._cleanup_saved_batches(100)
                 
                 batch += 1
 
@@ -230,14 +248,8 @@ class Trainer:
         self.loss['disc'].append(disc_loss)
         # Increment global step after a full train step
         self.global_step += 1
-        # Persist fade progress to config so training can resume mid-fade
-        if hasattr(self.gen, 'config'):
-            try:
-                self.gen.config.fade_step = int(self.global_step)
-                # Save immediately for resilience to interruptions
-                self.gen.config.save_config()
-            except Exception as e:
-                print(f"Warning: failed to persist fade_step: {e}")
+        # Persist fade progress across generator/discriminator configs for resume support
+        self._sync_fade_progress(persist=True)
 
     def save_model(self, path = None):
         """
@@ -291,5 +303,83 @@ class Trainer:
         plt.xlabel("Epochs")
         plt.savefig(os.path.join(self.save_dir, 'history.png'))
         plt.close()
+
+    @staticmethod
+    def _extract_batch_number(path: str):
+        basename = os.path.basename(os.path.normpath(path))
+        match = re.search(r"batch_(\d+)", basename)
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
+    def _cleanup_saved_batches(self, keep_every: int):
+        """
+        Remove checkpoint directories for batches that do not align with the cleanup milestone
+        and trim only the seven most recent synthetic samples for those batches.
+        """
+        if keep_every <= 0:
+            return
+
+        removed_checkpoints = 0
+        trimmed_images = 0
+        synthetic_dir = os.path.join(self.save_dir, "synthetic_images")
+
+        for checkpoint_path in glob(os.path.join(self.save_dir, "batch_*")):
+            if not os.path.isdir(checkpoint_path):
+                continue
+            batch_number = self._extract_batch_number(checkpoint_path)
+            if batch_number is None or batch_number % keep_every == 0:
+                continue
+
+            shutil.rmtree(checkpoint_path, ignore_errors=True)
+            removed_checkpoints += 1
+
+            if os.path.isdir(synthetic_dir):
+                pattern = os.path.join(synthetic_dir, f"batch_{batch_number}_synthetic_*.png")
+                indexed_images = []
+                for image_path in glob(pattern):
+                    stem = os.path.splitext(os.path.basename(image_path))[0]
+                    try:
+                        image_index = int(stem.split("_")[-1])
+                    except (ValueError, IndexError):
+                        continue
+                    indexed_images.append((image_index, image_path))
+                indexed_images.sort(key=lambda item: item[0])
+                for _, image_path in indexed_images[-7:]:
+                    try:
+                        os.remove(image_path)
+                        trimmed_images += 1
+                    except (FileNotFoundError, ValueError):
+                        continue
+
+        if removed_checkpoints or trimmed_images:
+            print(
+                f"Cleanup milestone reached (keep every {keep_every} batches): "
+                f"removed {removed_checkpoints} checkpoint directories, trimmed {trimmed_images} synthetic images."
+            )
+
+    def _sync_fade_progress(self, persist=True):
+        """
+        Mirror fade progress/targets to both generator and discriminator configs so training can resume seamlessly.
+        """
+        target_step = int(self.global_step)
+        gen_cfg = getattr(self.gen, 'config', None)
+        disc_cfg = getattr(self.disc, 'config', None)
+
+        for cfg, label in ((gen_cfg, "generator"), (disc_cfg, "discriminator")):
+            if cfg is None:
+                continue
+            try:
+                cfg.fade_step = target_step
+                if gen_cfg is not None and cfg is not gen_cfg and hasattr(cfg, 'fade_steps') and hasattr(gen_cfg, 'fade_steps'):
+                    if cfg.fade_steps != gen_cfg.fade_steps:
+                        cfg.fade_steps = gen_cfg.fade_steps
+                if persist:
+                    cfg.save_config()
+            except Exception as e:
+                print(f"Warning: failed to persist fade configuration for {label}: {e}")
 
 

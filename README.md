@@ -47,7 +47,30 @@ This is an example of a picture generated from the snowGAN after training on ~15
 ## How to Use
 
 ```bash
-snowgan --mode train --gen_steps 4 --disc_lr 0.0001
+snowgan --mode train --save_dir D:/Models/snowGAN/keras/--gen_steps 4 --disc_lr 0.0001
 
 snowgan --mode generate --n_samples 10
 ``` 
+
+## TensorFlow + GPU (Blackwell) Setup
+
+SnowGAN works with stable TensorFlow and tf-nightly. For NVIDIA Blackwell GPUs, use a recent TensorFlow that supports CUDA 12.x and cuDNN 9, or tf-nightly. The CLI selects GPU by default and enables memory growth; use `--device cpu` to force CPU.
+
+- Linux (recommended):
+  - Install latest NVIDIA driver (R555+).
+  - Create/activate a virtual environment.
+  - Install tf-nightly and, if needed, CUDA runtime libs from PyPI:
+    ```bash
+    pip install --upgrade pip
+    pip install tf-nightly
+    # If needed for GPU runtime on Linux:
+    pip install nvidia-cuda-runtime-cu12 nvidia-cublas-cu12 nvidia-cudnn-cu12
+    ```
+  - Verify GPU visibility:
+    ```bash
+    python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+    ```
+
+- Windows: GPU wheels availability for nightly varies. If tf-nightly GPU is not available, use the latest stable `tensorflow` with GPU support, or run under WSL2 and follow Linux steps.
+
+- Mixed precision: enable with `--mixed_precision True` to use `mixed_float16` (recommended on recent NVIDIA GPUs).
