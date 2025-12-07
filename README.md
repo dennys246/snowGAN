@@ -6,7 +6,7 @@ tags:
 - gan
 - image-generation
 pipeline_tag: image-generation
-library_name: pytorch
+library_name: snowgan
 ---
 
 # The Abominable SnowGAN
@@ -74,3 +74,4 @@ SnowGAN works with stable TensorFlow and tf-nightly. For NVIDIA Blackwell GPUs, 
 - Windows: GPU wheels availability for nightly varies. If tf-nightly GPU is not available, use the latest stable `tensorflow` with GPU support, or run under WSL2 and follow Linux steps.
 
 - Mixed precision: enable with `--mixed_precision True` to use `mixed_float16` (recommended on recent NVIDIA GPUs).
+
