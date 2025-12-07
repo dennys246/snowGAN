@@ -1,4 +1,5 @@
-import os, argparse, datasets
+import argparse
+import os
 from tensorflow.keras.mixed_precision import set_global_policy
 import tensorflow as tf
 from pathlib import Path
@@ -47,7 +48,7 @@ def compute_fade_alpha(current_step, fade_steps):
     Args:
         current_step: integer step within the current resolution phase.
         fade_steps: number of steps to ramp alpha from 0 -> 1.
-
+ 
     Returns:
         tf.float32 alpha in [0, 1].
     """
@@ -56,6 +57,10 @@ def compute_fade_alpha(current_step, fade_steps):
     return tf.clip_by_value(current / total, 0.0, 1.0)
 
 def configure_device(args):
+    # Disable XLA unless explicitly requested
+    if not getattr(args, "xla", False):
+        os.environ.setdefault("TF_XLA_FLAGS", "--tf_xla_enable_xla_devices=false --tf_xla_auto_jit=0")
+
     # Configure tensorflow
     if hasattr(args, "device") and args.device == "cpu":
         os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
@@ -67,17 +72,19 @@ def configure_device(args):
                 tf.config.experimental.set_memory_growth(gpu, True)
     # Do not force-disable GPUs unconditionally; respect the selected device
     if args.xla == True: # Use XLA computation for faster runtime operations
-        tf.config.optimizer.set_jit(True)  
+        tf.config.optimizer.set_jit(True)
+    else:
+        tf.config.optimizer.set_jit(False)  # Explicitly keep XLA off unless requested
     if args.mixed_precision == True : # Use mixed precision for faster training
         set_global_policy("mixed_float16")
 
 
 def parse_args():
-        # Initialize the parser for accepting arugments into a command line call
+    # Initialize the parser for accepting arugments into a command line call
     parser = argparse.ArgumentParser(description = "The snowGAN model is used to train a GAN on a dataset of snow samples magnified on a crystal card. You can define how the model runs by the number of epochs, batch sizes and other parameters. You can also pass in a path to a pre-trained snowGAN to accomplish transfer learning on rebuild GAN tasks!")
 
     # Add command-line arguments
-    parser.add_argument('--mode', type = str, choices = ["train", "generate"], required = True, help = "Mode to run the model in, either generate fake data or train the model")
+    parser.add_argument('--mode', type = str, choices = ["train", "generate", "infer"], required = True, help = "Mode to run the model in: train the GAN, generate synthetics, or run inference on avalanche/wind labels")
     parser.add_argument('--dataset_dir', type = str, default = 'rmdig/rocky_mountain_snowpack', help = "Path to the Rocky Mountain Snowpack dataset, if none provided it will download directly from HF remote repository")
     parser.add_argument('--save_dir', type = str, default = "keras/snowgan/", help = "Path to save results where a pre-trained model may be found (defaults to keras/snowgan/)")
     
@@ -96,8 +103,9 @@ def parse_args():
     # Use None defaults so resume can rely on persisted config unless explicitly overridden
     parser.add_argument('--fade', type = bool, default = None, help = 'Enable progressive fade-in between resolutions (set True/False to override config)')
     parser.add_argument('--fade_steps', type = int, default = None, help = 'Steps to ramp alpha from 0 to 1 during fade-in (override config if set)')
+    parser.add_argument('--infer_samples', type = int, default = 1000, help = 'Number of labeled images to evaluate during inference (Defaults to 1000). Datatype fixed to magnified_profile.')
 
-    parser.add_argument('--gen_checkpoint', type = str, help = "Path to a pre-trained generator model to load")
+    parser.add_argument('--gen_checkpoint', type = str, help = 'Path to a pre-trained generator model to load')
     parser.add_argument('--gen_kernel', type = str, help = 'Generator kernel size (Defaults to [5, 5])')
     parser.add_argument('--gen_stride', type = str, help = 'Generator kernel stride (Defaults to [2, 2])')
     parser.add_argument('--gen_lr', type = float, help = 'Generators optimizer learning rate (Defaults to 0.001)')
