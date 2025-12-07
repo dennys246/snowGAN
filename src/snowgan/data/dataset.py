@@ -13,7 +13,8 @@ class DataManager:
             
         This class handles loading the dataset and preparing batches of data for training.
         """
-        self.dataset = load_dataset("rmdig/rocky_mountain_snowpack")
+        dataset_name = getattr(config, "dataset", None) or "rmdig/rocky_mountain_snowpack"
+        self.dataset = load_dataset(dataset_name)
         self.config = config
 
     def batch(self, batch_size, datatype = "magnified_profile", config = None):
