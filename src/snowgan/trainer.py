@@ -95,6 +95,10 @@ class Trainer:
         gen_step = int(getattr(self.gen.config, 'fade_step', 0) or 0)
         disc_step = int(getattr(self.disc.config, 'fade_step', 0) or 0)
         self.global_step = max(gen_step, disc_step)
+        self.fade_steps = max(1, int(getattr(self.gen.config, 'fade_steps', 1)))
+        self.fade_complete = not (getattr(self.gen.config, 'fade', False) and getattr(self.gen, 'fade_endpoints', None) is not None)
+        if self.global_step >= self.fade_steps:
+            self.fade_complete = True
         # Keep generator/discriminator configs aligned without forcing a disk write on init
         self._sync_fade_progress(persist=False)
 
@@ -186,14 +190,7 @@ class Trainer:
             with tf.GradientTape() as tape: 
                 
                 # Generate a synthetic sample via forward propagation in the generator
-                if getattr(self.gen.config, 'fade', False) and (getattr(self.gen, 'fade_endpoints', None) is not None):
-                    fade_total = max(1, int(getattr(self.gen.config, 'fade_steps', 1)))
-                    alpha = compute_fade_alpha(self.global_step % fade_total, fade_total)
-                    prev_up, curr_img = self.gen.fade_endpoints(noise, training=True)
-                    alpha = tf.cast(alpha, curr_img.dtype)
-                    synthetic_images = (1.0 - alpha) * prev_up + alpha * curr_img
-                else:
-                    synthetic_images = self.gen.model(noise, training=True)
+                synthetic_images = self._generate_with_fade(noise, training=True)
 
                 # Forward propogate real & synethic images to the discriminator
                 output = self.disc.model(images, training=True) 
@@ -217,15 +214,8 @@ class Trainer:
             # Initialize automtic differentiation during forward propogation
             with tf.GradientTape() as tape:
                 # Forward pass noise through the generator to create synthetic images
-                use_fade = getattr(self.gen.config, 'fade', False) and (getattr(self.gen, 'fade_endpoints', None) is not None)
-                if use_fade:
-                    fade_total = max(1, int(getattr(self.gen.config, 'fade_steps', 1)))
-                    alpha = compute_fade_alpha(self.global_step % fade_total, fade_total)
-                    prev_up, curr_img = self.gen.fade_endpoints(noise, training=True)
-                    alpha = tf.cast(alpha, curr_img.dtype)
-                    synthetic_images = (1.0 - alpha) * prev_up + alpha * curr_img
-                else:
-                    synthetic_images = self.gen.model(noise, training=True)
+                use_fade = self._use_fade()
+                synthetic_images = self._generate_with_fade(noise, training=True)
                 # Forward pass generator outputs through the discriminator for loss calculation
                 synthetic_output = self.disc.model(synthetic_images, training=True)
                 # Calculate generator loss for backpropogation by calculating mean of disc output
@@ -248,8 +238,26 @@ class Trainer:
         self.loss['disc'].append(disc_loss)
         # Increment global step after a full train step
         self.global_step += 1
+        self._update_fade_completion()
         # Persist fade progress across generator/discriminator configs for resume support
         self._sync_fade_progress(persist=True)
+
+    def _use_fade(self):
+        return getattr(self.gen.config, 'fade', False) and getattr(self.gen, 'fade_endpoints', None) is not None and not self.fade_complete
+
+    def _generate_with_fade(self, noise, training=True):
+        if self._use_fade():
+            fade_total = self.fade_steps
+            fade_progress = min(self.global_step, fade_total)
+            alpha = compute_fade_alpha(fade_progress, fade_total)
+            prev_up, curr_img = self.gen.fade_endpoints(noise, training=training)
+            alpha = tf.cast(alpha, curr_img.dtype)
+            return (1.0 - alpha) * prev_up + alpha * curr_img
+        return self.gen.model(noise, training=training)
+
+    def _update_fade_completion(self):
+        if not self.fade_complete and self.global_step >= self.fade_steps:
+            self.fade_complete = True
 
     def save_model(self, path = None):
         """
@@ -263,6 +271,8 @@ class Trainer:
             path = self.save_dir
         
         os.makedirs(path, exist_ok = True)
+        # Persist configs alongside weights for reproducible snapshots
+        self._save_configs(path)
 
         # Log and plot final history
         save_history(self.gen.config.save_dir, self.loss, self.trained_data)
@@ -360,6 +370,28 @@ class Trainer:
                 f"Cleanup milestone reached (keep every {keep_every} batches): "
                 f"removed {removed_checkpoints} checkpoint directories, trimmed {trimmed_images} synthetic images."
             )
+
+    def _save_configs(self, path: str):
+        """
+        Save generator and discriminator configs to the given snapshot path without
+        permanently changing their primary config file targets.
+        """
+        gen_cfg_path = os.path.join(path, "generator_config.json")
+        disc_cfg_path = os.path.join(path, "discriminator_config.json")
+
+        # Preserve original config destinations so subsequent saves still hit the main paths
+        gen_orig = getattr(self.gen.config, "config_filepath", None)
+        disc_orig = getattr(self.disc.config, "config_filepath", None)
+        try:
+            self.gen.config.save_config(gen_cfg_path)
+            self.disc.config.save_config(disc_cfg_path)
+        except Exception as e:
+            print(f"Warning: failed to save configs in {path}: {e}")
+        finally:
+            if gen_orig is not None:
+                self.gen.config.config_filepath = gen_orig
+            if disc_orig is not None:
+                self.disc.config.config_filepath = disc_orig
 
     def _sync_fade_progress(self, persist=True):
         """

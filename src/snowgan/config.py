@@ -63,7 +63,7 @@ def _normalize_checkpoint(save_dir: str, checkpoint: Optional[str], default_file
 config_template = {
             "save_dir": "keras/snowgan/",
             "checkpoint": "keras/snowgan/discriminator.keras",
-            "dataset": "dennys246/rocky_mountain_snowpack",
+            "dataset": "rmdig/rocky_mountain_snowpack",
             "datatype": "magnified_profile",
             "architecture": "discriminator",
             "resolution": [1024, 1024],
@@ -320,6 +320,7 @@ def configure_disc(config, args):
 
 def configure_generic(config, args):
     if args.save_dir: config.save_dir = _normalize_save_dir(args.save_dir)
+    if getattr(args, "dataset_dir", None): config.dataset = args.dataset_dir
     if args.rebuild: config.rebuild = args.rebuild
 
     if args.resolution: config.resolution = args.resolution

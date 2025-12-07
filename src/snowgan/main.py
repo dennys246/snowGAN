@@ -4,11 +4,16 @@ from snowgan.generate import generate
 from snowgan.models.generator import load_generator
 from snowgan.models.discriminator import load_discriminator
 from snowgan.config import configure_disc, configure_gen, build
+from snowgan.inference import run_inference
 from snowgan.utils import parse_args, configure_device
 
 
 def main():
     args = parse_args()
+    if args.mode == "infer":
+        # Force CPU for inference to avoid GPU PTX compile requirements
+        args.device = "cpu"
+        args.xla = False
     # Configure TensorFlow runtime (GPU/CPU, XLA, mixed precision)
     try:
         configure_device(args)
@@ -31,7 +36,20 @@ def main():
     # Persist configured discriminator settings immediately
     disc_config.save_config(disc_config_path)
 
-    # Load the generator
+    if args.mode == "infer":
+        discriminator = load_discriminator(disc_config.checkpoint, disc_config)
+        results = run_inference(
+            discriminator,
+            dataset_name=disc_config.dataset,
+            resolution=disc_config.resolution,
+            batch_size=args.batch_size,
+            sample_count=args.infer_samples,
+            save_dir=disc_config.save_dir,
+        )
+        print(f"Inference complete on {results['total_seen']} samples; plot saved to {results.get('plot_path')}")
+        return
+
+    # Load the generator when training or generating samples
     generator = load_generator(gen_config.checkpoint, gen_config)
 
     if args.mode == "train":
@@ -42,7 +60,7 @@ def main():
         trainer = Trainer(generator, discriminator)
         trainer.train(batch_size = args.batch_size, epochs = args.epochs)
     
-    if args.mode == "generate":
+    elif args.mode == "generate":
 
         _ = generate(generator, args.n_samples, args.latent_dim, args.save_dir)
 
