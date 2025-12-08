@@ -81,6 +81,14 @@ class Trainer:
                                             beta_2 = self.disc.config.beta_2)
 
         self.dataset = DataManager(self.gen.config)
+        # Keep seen profile tracking persistent across configs
+        self.gen.config.seen_profiles = self.dataset.seen_profiles
+        self.disc.config.seen_profiles = self.dataset.seen_profiles
+        # Keep discriminator channel/volume settings aligned with generator at startup
+        self.disc.config.channels = self.gen.config.channels
+        self.disc.config.depth = getattr(self.gen.config, "depth", 1)
+        # Track last built depth to avoid redundant rebuilds
+        self._built_depth = getattr(self.gen.config, "depth", 1)
         self.train_ind = self.gen.config.train_ind
         self.trained_data = []
 
@@ -117,8 +125,13 @@ class Trainer:
         # Update hyperparameters if passed in before training
         if batch_size: self.batch_size = batch_size
 
+        start_epoch = int(getattr(self.gen.config, "current_epoch", 0) or 0)
         # Iterate through requested training batches
-        for epoch in range(epochs):
+        for epoch in range(start_epoch, start_epoch + epochs):
+            # New epoch restart: allow profiles to be reused next pass
+            self.dataset.reset_seen_profiles()
+            self.gen.config.current_epoch = epoch
+            self.disc.config.current_epoch = epoch
             batch = 1
 
             batched_images = glob(f"{self.gen.config.save_dir}/synthetic_images/*batch*.png")
@@ -131,15 +144,23 @@ class Trainer:
             while trainable_data:
                 # Load a new batch of subjects
                 print(f"Grab a batch of data")
-                x = self.dataset.batch(batch_size, 'magnified_profile') 
+                x = self.dataset.batch_merged(batch_size) 
                 if x is None:
-                    self.gen.config.train_ind = 390
-                    x = self.dataset.batch(batch_size, 'magnified_profile') 
+                    self.gen.config.train_ind = 0
+                    x = self.dataset.batch_merged(batch_size) 
                     
                 print(f"Data batched")
                 if x is None:
                     print(f"Training Epoch Complete")
                     trainable_data = False
+                    continue
+
+                # Sync discriminator settings with any update the dataset applied to generator
+                self.disc.config.channels = self.gen.config.channels
+                self.disc.config.depth = getattr(self.gen.config, "depth", 1)
+
+                # Ensure models match the incoming depth (e.g., stacked core/profile views)
+                self._ensure_depth_alignment(x.shape[1])
 
                 print(f"Training on batch {batch}...")
 
@@ -159,6 +180,10 @@ class Trainer:
                         self._cleanup_saved_batches(100)
                 
                 batch += 1
+            # Mark epoch completion for persistence
+            self.gen.config.current_epoch = epoch + 1
+            self.disc.config.current_epoch = epoch + 1
+
 
     def train_step(self, images, disc_steps = None, gen_steps = None):
         """
@@ -258,6 +283,26 @@ class Trainer:
     def _update_fade_completion(self):
         if not self.fade_complete and self.global_step >= self.fade_steps:
             self.fade_complete = True
+
+    def _ensure_depth_alignment(self, depth):
+        """Rebuild models if batch depth differs from configured depth."""
+        desired = int(depth) if depth is not None else None
+        if desired is None:
+            return
+        if desired == self._built_depth:
+            return
+
+        current_gen = getattr(self.gen.config, "depth", None)
+        current_disc = getattr(self.disc.config, "depth", None)
+
+        print(f"Rebuilding models for depth {desired} (was gen={current_gen}, disc={current_disc})")
+        self.gen.config.depth = desired
+        self.disc.config.depth = desired
+
+        # Rebuild models with the new depth
+        self.gen = type(self.gen)(self.gen.config)
+        self.disc = type(self.disc)(self.disc.config)
+        self._built_depth = desired
 
     def save_model(self, path = None):
         """
