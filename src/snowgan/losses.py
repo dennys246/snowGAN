@@ -42,7 +42,8 @@ def compute_gradient_penalty(discriminator, real_images, fake_images, lambda_gp=
         tf.Tensor: Gradient penalty scalar
     """
     batch_size = tf.shape(real_images)[0]
-    alpha = tf.random.uniform([batch_size, 1, 1, 1], 0., 1.)
+    # Match alpha to the full image rank for broadcasting (B, D, H, W, C)
+    alpha = tf.random.uniform([batch_size, 1, 1, 1, 1], 0., 1.)
     interpolated = alpha * real_images + (1 - alpha) * fake_images
 
     with tf.GradientTape() as tape:
@@ -50,6 +51,6 @@ def compute_gradient_penalty(discriminator, real_images, fake_images, lambda_gp=
         pred = discriminator(interpolated, training=True)
 
     grads = tape.gradient(pred, interpolated)
-    norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3]) + 1e-12)
+    norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3, 4]) + 1e-12)
     penalty = tf.reduce_mean((norm - 1.0) ** 2) * lambda_gp
     return penalty
