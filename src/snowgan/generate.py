@@ -41,11 +41,23 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
         image_arr = (image_arr + 1.0) * 127.5
         image_arr = np.clip(image_arr, 0, 255).astype(np.uint8)
 
-        # Convert to PIL image
-        image = Image.fromarray(image_arr)
-
-        # Save image with parameters provided
-        save_image(image, filepath)
+        # If depth dimension present, save each slice separately
+        if image_arr.ndim == 4:
+            depth = image_arr.shape[0]
+            view_names = ["profile", "core"]
+            for d in range(depth):
+                suffix = view_names[d] if d < len(view_names) else f"view{d}"
+                arr = image_arr[d]
+                if suffix == "core":
+                    arr = np.array(Image.fromarray(arr).resize((500, 300), Image.BICUBIC))
+                split_path = filepath.replace(".png", f"_{suffix}.png")
+                image = Image.fromarray(arr)
+                save_image(image, split_path)
+        else:
+            # Convert to PIL image
+            image = Image.fromarray(image_arr)
+            # Save image with parameters provided
+            save_image(image, filepath)
     
     return np.stack(synthetic_images)
 
