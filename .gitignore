@@ -181,3 +181,9 @@ outputs/
 .DS_Store
 keras/
 pytorch/
+
+# Temporary files
+tmpclaude-*/
+.claude/
+tmp_check.txt
+cuda-keyring_*.deb
