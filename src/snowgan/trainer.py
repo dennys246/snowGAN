@@ -27,12 +27,11 @@ class Trainer:
         # Attempt to load weights if they haven't been built yet
         if os.path.exists(self.gen.config.checkpoint):
             try:
-                loaded_gen = keras.models.load_model(self.gen.config.checkpoint)
-                # Load weights into the prebuilt model to preserve shared layers used by fade_endpoints
-                self.gen.model.set_weights(loaded_gen.get_weights())
+                # Load weights from .keras file
+                self.gen.model.load_weights(self.gen.config.checkpoint)
                 print(f"Generator weights loaded successfully from {self.gen.config.checkpoint}")
             except Exception as e:
-                print(f"Warning: could not load generator model via set_weights: {e}. Using freshly initialized weights.")
+                print(f"Warning: could not load generator weights: {e}. Using freshly initialized weights.")
         else:
             print("Generator saved weights not found, new model initialized")
 
@@ -46,11 +45,10 @@ class Trainer:
         # If weights haven't been initialized
         if os.path.exists(self.disc.config.checkpoint):
             try:
-                loaded_disc = keras.models.load_model(self.disc.config.checkpoint)
-                self.disc.model.set_weights(loaded_disc.get_weights())
+                self.disc.model.load_weights(self.disc.config.checkpoint)
                 print(f"Discriminator weights loaded successfully from {self.disc.config.checkpoint}")
             except Exception as e:
-                print(f"Warning: could not load discriminator model via set_weights: {e}. Using freshly initialized weights.")
+                print(f"Warning: could not load discriminator weights: {e}. Using freshly initialized weights.")
         else:
             print("Disciminator saved weights not found, new model initialized")
 
