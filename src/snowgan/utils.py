@@ -127,6 +127,14 @@ def parse_args():
     parser.add_argument('--disc_steps', type = int, help = 'Steps the discriminator takes per batch (Defaults to 1)')
     parser.add_argument('--disc_filters', type = str, help = 'Discriminator filters per convolution layer (Defaults to [64, 128, 256, 512, 1024])')
 
+    # Post-progressive training improvements
+    parser.add_argument('--spectral_norm', action='store_true', default=None, help='Enable spectral normalization on the discriminator')
+    parser.add_argument('--augment', action='store_true', default=None, help='Enable differentiable augmentation during training')
+    parser.add_argument('--lr_decay', type=str, default=None, choices=['cosine'], help='Learning rate decay schedule (e.g. "cosine")')
+    parser.add_argument('--lr_min', type=float, default=None, help='Minimum learning rate for LR decay (Defaults to 1e-7)')
+    parser.add_argument('--ema_decay', type=float, default=None, help='EMA decay for generator shadow weights (e.g. 0.999, 0 to disable)')
+    parser.add_argument('--fid_interval', type=int, default=None, help='Steps between FID evaluations (0 to disable)')
+
     # Parse the arguments
     return parser.parse_args()
 

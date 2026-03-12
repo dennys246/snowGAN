@@ -30,13 +30,16 @@ class Discriminator(keras.Model):
     def _build_model(self):
         inputs = keras.Input(shape=(self.config.resolution[0], self.config.resolution[1], 3))
         x = inputs
+        use_sn = getattr(self.config, 'spectral_norm', False)
 
         for filters in self.config.filter_counts:
-            x = keras.layers.Conv2D(filters, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding)(x)
+            conv = keras.layers.Conv2D(filters, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding)
+            x = keras.layers.SpectralNormalization(conv)(x) if use_sn else conv(x)
             x = keras.layers.LeakyReLU(negative_slope = self.config.negative_slope)(x)
 
         x = keras.layers.Flatten()(x)
-        outputs = keras.layers.Dense(1)(x)  # No activation for WGAN
+        dense = keras.layers.Dense(1)  # No activation for WGAN
+        outputs = keras.layers.SpectralNormalization(dense)(x) if use_sn else dense(x)
 
         return keras.Model(inputs, outputs, name="Discriminator")
 
