@@ -1,4 +1,4 @@
-import os, atexit, re, shutil
+import os, atexit, re, shutil, math
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
@@ -10,6 +10,7 @@ from snowgan.generate import generate, make_movie
 from snowgan.log import save_history, load_history
 from snowgan.data.dataset import DataManager
 from snowgan.utils import compute_fade_alpha
+from snowgan.augment import augment as diff_augment
  
 class Trainer:
 
@@ -32,6 +33,15 @@ class Trainer:
                 print(f"Generator weights loaded successfully from {self.gen.config.checkpoint}")
             except Exception as e:
                 print(f"Warning: could not load generator weights: {e}. Using freshly initialized weights.")
+            # Load fade endpoints weights (toRGB_prev) for mid-fade resume
+            if getattr(self.gen, 'fade_endpoints', None) is not None:
+                fade_weights_path = os.path.join(os.path.dirname(self.gen.config.checkpoint), "generator_fade_endpoints.weights.h5")
+                if os.path.exists(fade_weights_path):
+                    try:
+                        self.gen.fade_endpoints.load_weights(fade_weights_path)
+                        print(f"Generator fade endpoints loaded from {fade_weights_path}")
+                    except Exception as e:
+                        print(f"Warning: could not load fade endpoint weights: {e}. Using freshly initialized weights.")
         else:
             print("Generator saved weights not found, new model initialized")
 
@@ -100,6 +110,142 @@ class Trainer:
         # Keep generator/discriminator configs aligned without forcing a disk write on init
         self._sync_fade_progress(persist=False)
 
+        # --- Post-progressive training improvements ---
+        # Differentiable augmentation
+        self.use_augment = getattr(self.gen.config, 'augment', False)
+
+        # Learning rate decay (cosine annealing)
+        self.lr_decay = getattr(self.gen.config, 'lr_decay', None)
+        self.lr_min = getattr(self.gen.config, 'lr_min', 1e-7)
+        self.gen_lr_base = float(self.gen.config.learning_rate)
+        self.disc_lr_base = float(self.disc.config.learning_rate)
+
+        # Generator EMA (exponential moving average) shadow weights
+        self.ema_decay = getattr(self.gen.config, 'ema_decay', 0.0)
+        self.ema_weights = None
+        if self.ema_decay > 0:
+            self._init_ema()
+
+        # FID-based checkpointing
+        self.fid_interval = getattr(self.gen.config, 'fid_interval', 0)
+        self.best_fid = float('inf')
+
+    def _init_ema(self):
+        """Initialize EMA shadow weights as a copy of current generator weights."""
+        self.ema_weights = [tf.Variable(w, trainable=False, name=f"ema/{w.name}")
+                            for w in self.gen.model.trainable_variables]
+        # Load persisted EMA weights if available
+        ema_path = os.path.join(os.path.dirname(self.gen.config.checkpoint), "generator_ema.weights.h5")
+        if os.path.exists(ema_path):
+            try:
+                # Build a temporary model clone to load weights
+                tmp_model = keras.models.clone_model(self.gen.model)
+                tmp_model.build(self.gen.model.input_shape)
+                tmp_model.load_weights(ema_path)
+                for ema_var, tmp_var in zip(self.ema_weights, tmp_model.trainable_variables):
+                    ema_var.assign(tmp_var)
+                del tmp_model
+                print(f"EMA weights loaded from {ema_path}")
+            except Exception as e:
+                print(f"Warning: could not load EMA weights: {e}. Using current generator weights.")
+
+    def _update_ema(self):
+        """Update EMA shadow weights with current generator weights."""
+        if self.ema_weights is None:
+            return
+        decay = self.ema_decay
+        for ema_var, model_var in zip(self.ema_weights, self.gen.model.trainable_variables):
+            ema_var.assign(decay * ema_var + (1.0 - decay) * model_var)
+
+    def _apply_ema_to_generator(self):
+        """Swap EMA weights into the generator (for generation/eval)."""
+        if self.ema_weights is None:
+            return None
+        # Save current weights so we can restore later
+        backup = [tf.identity(w) for w in self.gen.model.trainable_variables]
+        for model_var, ema_var in zip(self.gen.model.trainable_variables, self.ema_weights):
+            model_var.assign(ema_var)
+        return backup
+
+    def _restore_generator_weights(self, backup):
+        """Restore generator weights from a backup (after EMA swap)."""
+        if backup is None:
+            return
+        for model_var, bak in zip(self.gen.model.trainable_variables, backup):
+            model_var.assign(bak)
+
+    def _update_learning_rates(self):
+        """Apply cosine annealing LR decay based on post-fade step count."""
+        if self.lr_decay != "cosine":
+            return
+        # Only decay after fade completes; use steps since fade ended
+        if not self.fade_complete:
+            return
+        post_fade_step = self.global_step - self.fade_steps
+        if post_fade_step < 0:
+            post_fade_step = 0
+        # Cosine decay over a long horizon (200k steps) with minimum floor
+        decay_steps = 200000
+        progress = min(post_fade_step / decay_steps, 1.0)
+        cosine_factor = 0.5 * (1.0 + math.cos(math.pi * progress))
+
+        gen_lr = self.lr_min + (self.gen_lr_base - self.lr_min) * cosine_factor
+        disc_lr = self.lr_min + (self.disc_lr_base - self.lr_min) * cosine_factor
+
+        self.gen.optimizer.learning_rate.assign(gen_lr)
+        self.disc.optimizer.learning_rate.assign(disc_lr)
+
+    def _compute_fid(self, num_samples=256):
+        """
+        Compute a lightweight FID approximation using InceptionV3 features.
+        Compares real dataset samples against generated samples.
+        Returns FID score or None if computation fails.
+        """
+        try:
+            from tensorflow.keras.applications.inception_v3 import InceptionV3, preprocess_input
+
+            inception = InceptionV3(include_top=False, pooling='avg', input_shape=(299, 299, 3))
+
+            def get_features(images):
+                # Resize to 299x299 and convert from [-1,1] to [0,255] range
+                images = tf.image.resize(images, (299, 299))
+                images = (images + 1.0) * 127.5
+                images = preprocess_input(images)
+                return inception(images, training=False)
+
+            # Generate fake samples
+            noise = tf.random.normal([num_samples, self.gen.config.latent_dim])
+            # Use EMA weights for generation if available
+            backup = self._apply_ema_to_generator()
+            fake_images = self.gen.model(noise, training=False)
+            self._restore_generator_weights(backup)
+
+            # Get real samples
+            real_images = self.dataset.batch(num_samples, 'magnified_profile')
+            if real_images is None:
+                return None
+
+            fake_features = get_features(fake_images).numpy()
+            real_features = get_features(real_images).numpy()
+
+            # Compute FID: ||mu_r - mu_f||^2 + Tr(C_r + C_f - 2*sqrt(C_r @ C_f))
+            mu_r, mu_f = np.mean(real_features, axis=0), np.mean(fake_features, axis=0)
+            sigma_r = np.cov(real_features, rowvar=False)
+            sigma_f = np.cov(fake_features, rowvar=False)
+
+            diff = mu_r - mu_f
+            # Stable matrix sqrt via eigendecomposition
+            product = sigma_r @ sigma_f
+            eigenvalues, _ = np.linalg.eigh(product)
+            eigenvalues = np.maximum(eigenvalues, 0)
+            sqrt_trace = np.sum(np.sqrt(eigenvalues))
+
+            fid = float(np.dot(diff, diff) + np.trace(sigma_r) + np.trace(sigma_f) - 2 * sqrt_trace)
+            return fid
+        except Exception as e:
+            print(f"Warning: FID computation failed: {e}")
+            return None
+
     def train(self, batch_size = 8, epochs = 1):
         """
         Initializes training the discriminator and generator based on requested
@@ -147,9 +293,23 @@ class Trainer:
                 self.plot_history() # Update history with progress
                 
                 # Generate synthetic images to the batch folder to track progress
+                # Use EMA weights for sample generation if available
                 if self.n_samples:
+                    backup = self._apply_ema_to_generator()
                     _ = generate(self.gen, count = self.n_samples, seed_size = self.gen.config.latent_dim, save_dir = f"{self.save_dir}/synthetic_images/", filename_prefix = f'batch_{batch}_synthetic')
-                
+                    self._restore_generator_weights(backup)
+
+                # FID-based best model checkpointing
+                if self.fid_interval > 0 and self.global_step % self.fid_interval == 0:
+                    fid = self._compute_fid()
+                    if fid is not None:
+                        print(f"FID @ step {self.global_step}: {fid:.2f} (best: {self.best_fid:.2f})")
+                        if fid < self.best_fid:
+                            self.best_fid = fid
+                            best_dir = os.path.join(self.save_dir, "best_fid/")
+                            self.save_model(best_dir)
+                            print(f"New best FID! Model saved to {best_dir}")
+
                 # Save the models state
                 if batch % self._save_interval == 0:
                     self.save_model(f"{self.save_dir}/batch_{batch}/")
@@ -183,24 +343,27 @@ class Trainer:
         print(f"Noise shape: {noise.shape}")
         
         # Train the discriminator N times
-        for _ in range(self.disc.config.training_steps): 
+        for _ in range(self.disc.config.training_steps):
+            # Generate synthetic images outside the tape — no need to track generator ops for disc training
+            synthetic_images = tf.stop_gradient(self._generate_with_fade(noise, training=True))
+
+            # Apply augmentation outside the tape to avoid storing intermediate tensors in memory
+            disc_real = diff_augment(images) if self.use_augment else images
+            disc_fake = diff_augment(synthetic_images) if self.use_augment else synthetic_images
+
             # Initialize automatic differentiation during forward propogation
-            with tf.GradientTape() as tape: 
-                
-                # Generate a synthetic sample via forward propagation in the generator
-                synthetic_images = self._generate_with_fade(noise, training=True)
-
+            with tf.GradientTape() as tape:
                 # Forward propogate real & synethic images to the discriminator
-                output = self.disc.model(images, training=True) 
-                synthetic_output = self.disc.model(synthetic_images, training=True)
+                output = self.disc.model(disc_real, training=True)
+                synthetic_output = self.disc.model(disc_fake, training=True)
 
-                # Calculate discriminators gradient penalty
+                # Calculate discriminators gradient penalty (on unaugmented images for stable gradients)
                 gp = compute_gradient_penalty(self.disc, images, synthetic_images, self.disc.config.lambda_gp)
 
                 # Calculate EMD/loss for the discriminators outputs
                 disc_loss = self.disc.get_loss(output, synthetic_output, gp, self.disc.config.lambda_gp)
-            
-            # Backpropogate by calculating gradient 
+
+            # Backpropogate by calculating gradient
             disc_gradients = tape.gradient(disc_loss, self.disc.model.trainable_variables)
             # Apply gradients via the optimizer and back propogation
             self.disc.optimizer.apply_gradients(zip(disc_gradients, self.disc.model.trainable_variables))
@@ -214,8 +377,10 @@ class Trainer:
                 # Forward pass noise through the generator to create synthetic images
                 use_fade = self._use_fade()
                 synthetic_images = self._generate_with_fade(noise, training=True)
+                # Apply differentiable augmentation to fake images for generator training
+                disc_fake = diff_augment(synthetic_images) if self.use_augment else synthetic_images
                 # Forward pass generator outputs through the discriminator for loss calculation
-                synthetic_output = self.disc.model(synthetic_images, training=True)
+                synthetic_output = self.disc.model(disc_fake, training=True)
                 # Calculate generator loss for backpropogation by calculating mean of disc output
                 gen_loss = self.gen.get_loss(synthetic_output)
             # Backpropogate to calculate gradient of trainable parameters given loss
@@ -231,7 +396,7 @@ class Trainer:
             # Apply the gradients and update trainable parameters (w, b, etc.)
             self.gen.optimizer.apply_gradients(zip(gen_gradients, var_list))
 
-        # Record loss of models to their histories - Should this be within training loops? Might be deceptive if not
+        # Record loss of models to their histories
         self.loss['gen'].append(gen_loss)
         self.loss['disc'].append(disc_loss)
         # Increment global step after a full train step
@@ -239,6 +404,10 @@ class Trainer:
         self._update_fade_completion()
         # Persist fade progress across generator/discriminator configs for resume support
         self._sync_fade_progress(persist=True)
+
+        # Post-step improvements
+        self._update_ema()
+        self._update_learning_rates()
 
     def _use_fade(self):
         return getattr(self.gen.config, 'fade', False) and getattr(self.gen, 'fade_endpoints', None) is not None and not self.fade_complete
@@ -279,6 +448,14 @@ class Trainer:
         # Save generator and discriminator as .keras files
         self.gen.model.save(f"{path}/generator.keras")
         self.disc.model.save(f"{path}/discriminator.keras")
+        # Save fade endpoints weights so mid-fade resume preserves toRGB_prev
+        if getattr(self.gen, 'fade_endpoints', None) is not None:
+            self.gen.fade_endpoints.save_weights(f"{path}/generator_fade_endpoints.weights.h5")
+        # Save EMA shadow weights for resume
+        if self.ema_weights is not None:
+            backup = self._apply_ema_to_generator()
+            self.gen.model.save_weights(f"{path}/generator_ema.weights.h5")
+            self._restore_generator_weights(backup)
         print(f"Models saved in {path}...")
 
     def load_model(self, path = None):
