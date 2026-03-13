@@ -193,6 +193,66 @@ If a deferred change destabilizes training:
 
 ---
 
+## Next Fresh Run: Capacity Upgrades
+
+These changes require a fresh training run (they alter model architecture):
+
+### Self-Attention at 64x64 Feature Maps
+
+**What:** Add a self-attention layer after the conv block that produces 64x64 feature maps in both generator and discriminator. This lets the model capture long-range spatial dependencies — critical for snow crystal branch symmetry and grid pattern coherence.
+
+**Why:**
+- Conv layers have limited receptive fields (~kernel_size per layer). At 64x64, the receptive field covers only a small fraction of the 1024x1024 output.
+- Snow crystals have global structure (6-fold symmetry, radial branching) that requires long-range spatial awareness.
+- Self-attention at 64x64 is the sweet spot: large enough to be meaningful, small enough to be affordable (~500MB-1GB VRAM).
+- Used by SAGAN, BigGAN, and StyleGAN2 with proven quality improvements.
+
+**Implementation:**
+1. Add a `SelfAttention` layer class:
+   ```python
+   class SelfAttention(keras.layers.Layer):
+       def __init__(self, channels, **kwargs):
+           super().__init__(**kwargs)
+           self.query = keras.layers.Conv2D(channels // 8, 1)
+           self.key = keras.layers.Conv2D(channels // 8, 1)
+           self.value = keras.layers.Conv2D(channels, 1)
+           self.gamma = self.add_weight("gamma", shape=[1], initializer="zeros")
+
+       def call(self, x):
+           q = self.query(x)  # (B, H, W, C//8)
+           k = self.key(x)
+           v = self.value(x)
+           # Reshape for attention: (B, H*W, C)
+           B, H, W = tf.shape(x)[0], tf.shape(x)[1], tf.shape(x)[2]
+           q = tf.reshape(q, [B, H*W, -1])
+           k = tf.reshape(k, [B, H*W, -1])
+           v = tf.reshape(v, [B, H*W, -1])
+           attn = tf.nn.softmax(tf.matmul(q, k, transpose_b=True))
+           out = tf.reshape(tf.matmul(attn, v), [B, H, W, -1])
+           return x + self.gamma * out
+   ```
+2. Insert after the 64x64 feature map block in both `generator._build_model()` and `discriminator._build_model()`
+3. Add `self_attention` config field (bool, default False) to gate it
+4. Apply spectral normalization to Q/K/V conv layers when SN is active
+
+**VRAM cost:** ~500MB-1GB at 64x64 with batch_size=12. Fits within current 16GB budget with mixed precision.
+
+### Wider Mid-Resolution Filters
+
+**What:** Increase filter counts at mid-resolution layers from `[1024, 512, 256, 128, 64]` to `[1024, 512, 512, 256, 128]`.
+
+**Why:** Mid-resolution layers (128x128, 256x256) are where texture details — snow grain boundaries, refraction patterns, crystal edges — are learned. More capacity here directly improves fine detail without increasing the highest-resolution (cheapest) layers.
+
+**VRAM cost:** ~200-400MB additional. Combined with self-attention, should still fit in 16GB with mixed precision and batch_size=12.
+
+### Larger Latent Dimension (100 → 256)
+
+**What:** Increase `latent_dim` from 100 to 256.
+
+**Why:** More dimensions = more room to encode variation in snow crystal morphology (crystal type, size, density, orientation, refraction). Cheap in VRAM (<50MB), modest but free quality improvement.
+
+---
+
 ## Additional Future Considerations
 
 - **Progressive growing to 2048x2048** — The existing fade infrastructure supports this. Would require adding another conv block to both gen and disc, plus more VRAM (mixed precision becomes essential).
