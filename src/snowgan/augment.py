@@ -37,20 +37,21 @@ def _random_flip(images, p):
 
 def _random_brightness(images, p, max_delta=0.2):
     if tf.random.uniform([]) < p:
-        delta = tf.random.uniform([], -max_delta, max_delta)
+        delta = tf.random.uniform([], -max_delta, max_delta, dtype=images.dtype)
         images = images + delta
-        images = tf.clip_by_value(images, -1.0, 1.0)
+        images = tf.clip_by_value(images, tf.cast(-1.0, images.dtype), tf.cast(1.0, images.dtype))
     return images
 
 
 def _random_saturation(images, p, lower=0.8, upper=1.2):
     if tf.random.uniform([]) < p:
         # Convert from [-1,1] to [0,1] for saturation adjustment
-        images_01 = (images + 1.0) / 2.0
-        factor = tf.random.uniform([], lower, upper)
+        images_01 = (images + tf.cast(1.0, images.dtype)) / tf.cast(2.0, images.dtype)
+        factor = tf.random.uniform([], lower, upper, dtype=images.dtype)
         mean = tf.reduce_mean(images_01, axis=-1, keepdims=True)
         images_01 = mean + factor * (images_01 - mean)
-        images = tf.clip_by_value(images_01 * 2.0 - 1.0, -1.0, 1.0)
+        images = tf.clip_by_value(images_01 * tf.cast(2.0, images.dtype) - tf.cast(1.0, images.dtype),
+                                  tf.cast(-1.0, images.dtype), tf.cast(1.0, images.dtype))
     return images
 
 
@@ -77,5 +78,6 @@ def _random_cutout(images, p, ratio=0.25):
         mask_x = tf.cast((x_range >= cx) & (x_range < cx + tf.cast(cut_w, tf.float32)), tf.float32)
         mask = 1.0 - mask_y * mask_x
 
-        images = images * mask
+        # Cast mask to match image dtype for mixed precision compatibility
+        images = images * tf.cast(mask, images.dtype)
     return images

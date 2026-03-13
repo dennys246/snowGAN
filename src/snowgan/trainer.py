@@ -79,15 +79,6 @@ class Trainer:
             self.disc.config.cleanup_milestone = self.cleanup_milestone
         self._save_interval = self.cleanup_milestone if self.cleanup_milestone > 0 else 1000
 
-            # Setup optimizers from config or defaults
-        self.gen_optimizer = tf.keras.optimizers.Adam(learning_rate=self.gen.config.learning_rate,
-                                        beta_1 = self.gen.config.beta_1,
-                                        beta_2 = self.gen.config.beta_2)
-        
-        self.disc_optimizer = tf.keras.optimizers.Adam(learning_rate = self.disc.config.learning_rate,
-                                            beta_1 = self.disc.config.beta_1,
-                                            beta_2 = self.disc.config.beta_2)
-
         self.dataset = DataManager(self.gen.config)
         self.train_ind = self.gen.config.train_ind
         self.trained_data = []
@@ -111,6 +102,15 @@ class Trainer:
         self._sync_fade_progress(persist=False)
 
         # --- Post-progressive training improvements ---
+        # When spectral norm is active, reduce gradient penalty weight since SN
+        # already enforces the Lipschitz constraint — heavy GP on top over-constrains
+        # the discriminator and causes color drift / mode collapse.
+        use_sn = getattr(self.disc.config, 'spectral_norm', False)
+        if use_sn and self.disc.config.lambda_gp > 1.0:
+            old_gp = self.disc.config.lambda_gp
+            self.disc.config.lambda_gp = 1.0
+            print(f"Spectral norm active: reduced lambda_gp from {old_gp} to {self.disc.config.lambda_gp}")
+
         # Differentiable augmentation
         self.use_augment = getattr(self.gen.config, 'augment', False)
 
@@ -130,10 +130,41 @@ class Trainer:
         self.fid_interval = getattr(self.gen.config, 'fid_interval', 0)
         self.best_fid = float('inf')
 
+        # Gradient clipping
+        self.grad_clip_norm = getattr(self.gen.config, 'grad_clip_norm', 0.0)
+
+        # Fixed seed for consistent visual tracking across batches
+        self._tracking_seed = tf.random.normal([self.n_samples, self.gen.config.latent_dim])
+
+        # Adaptive disc/gen step ratio
+        self.adaptive_steps = getattr(self.gen.config, 'adaptive_steps', False)
+        self._base_disc_steps = self.disc.config.training_steps
+        self._disc_loss_ema = 0.0
+        self._gen_loss_ema = 0.0
+
+        # Adaptive augmentation (ADA) — adjust augment probability based on disc overfitting
+        self.ada_target = getattr(self.gen.config, 'ada_target', 0.0)
+        self.augment_p = 0.5 if self.use_augment else 0.0
+
+        # Multi-scale discriminator
+        self.multiscale_disc = getattr(self.disc.config, 'multiscale_disc', False)
+        self.disc_lowres = None
+        self.disc_lowres_optimizer = None
+        if self.multiscale_disc:
+            self._build_lowres_disc()
+            lowres_path = os.path.join(os.path.dirname(self.disc.config.checkpoint), "discriminator_lowres.keras")
+            if os.path.exists(lowres_path):
+                try:
+                    self.disc_lowres.load_weights(lowres_path)
+                    print(f"Low-res discriminator loaded from {lowres_path}")
+                except Exception as e:
+                    print(f"Warning: could not load low-res disc weights: {e}. Initialized fresh.")
+
     def _init_ema(self):
-        """Initialize EMA shadow weights as a copy of current generator weights."""
-        self.ema_weights = [tf.Variable(w, trainable=False, name=f"ema/{w.name}")
-                            for w in self.gen.model.trainable_variables]
+        """Initialize EMA shadow weights as a copy of current generator weights on CPU to save VRAM."""
+        with tf.device('/CPU:0'):
+            self.ema_weights = [tf.Variable(w, trainable=False, name=f"ema/{w.name}")
+                                for w in self.gen.model.trainable_variables]
         # Load persisted EMA weights if available
         ema_path = os.path.join(os.path.dirname(self.gen.config.checkpoint), "generator_ema.weights.h5")
         if os.path.exists(ema_path):
@@ -195,7 +226,65 @@ class Trainer:
         self.gen.optimizer.learning_rate.assign(gen_lr)
         self.disc.optimizer.learning_rate.assign(disc_lr)
 
-    def _compute_fid(self, num_samples=256):
+    def _build_lowres_disc(self):
+        """Build a lightweight discriminator for 256x256 input (multi-scale feedback)."""
+        use_sn = getattr(self.disc.config, 'spectral_norm', False)
+        inputs = keras.Input(shape=(256, 256, 3))
+        x = inputs
+        for filters in [64, 128, 256]:
+            conv = keras.layers.Conv2D(filters, 3, strides=2, padding='same')
+            x = keras.layers.SpectralNormalization(conv)(x) if use_sn else conv(x)
+            x = keras.layers.LeakyReLU(negative_slope=0.25)(x)
+        x = keras.layers.Flatten()(x)
+        dense = keras.layers.Dense(1)
+        outputs = keras.layers.SpectralNormalization(dense)(x) if use_sn else dense(x)
+        self.disc_lowres = keras.Model(inputs, outputs, name="DiscriminatorLowRes")
+        self.disc_lowres_optimizer = keras.optimizers.Adam(
+            learning_rate=self.disc.config.learning_rate,
+            beta_1=self.disc.config.beta_1,
+            beta_2=self.disc.config.beta_2
+        )
+        print(f"Multi-scale discriminator built (256x256, {self.disc_lowres.count_params()} params)")
+
+    def _update_adaptive_steps(self, disc_loss, gen_loss):
+        """Adjust disc training steps based on loss balance."""
+        if not self.adaptive_steps:
+            return
+        # Exponential moving average of losses
+        alpha = 0.05
+        self._disc_loss_ema = alpha * abs(float(disc_loss)) + (1 - alpha) * self._disc_loss_ema
+        self._gen_loss_ema = alpha * abs(float(gen_loss)) + (1 - alpha) * self._gen_loss_ema
+        total = self._disc_loss_ema + self._gen_loss_ema + 1e-8
+        disc_ratio = self._disc_loss_ema / total
+
+        # Adjust every 100 steps
+        if self.global_step % 100 == 0 and self.global_step > 0:
+            max_steps = self._base_disc_steps * 2
+            if disc_ratio < 0.3:
+                # Disc too weak — give it more steps
+                self.disc.config.training_steps = min(self.disc.config.training_steps + 1, max_steps)
+                print(f"Adaptive steps: disc weak (ratio={disc_ratio:.2f}), disc_steps -> {self.disc.config.training_steps}")
+            elif disc_ratio > 0.7:
+                # Disc too strong — reduce its steps
+                self.disc.config.training_steps = max(self.disc.config.training_steps - 1, 1)
+                print(f"Adaptive steps: disc strong (ratio={disc_ratio:.2f}), disc_steps -> {self.disc.config.training_steps}")
+
+    def _update_ada(self, real_scores):
+        """Adjust augmentation probability based on discriminator overfitting (ADA)."""
+        if self.ada_target <= 0:
+            return
+        # rt = fraction of real images the disc correctly identifies (score > 0 in WGAN)
+        rt = float(tf.reduce_mean(tf.cast(real_scores > 0, tf.float32)))
+        # Adjust p every 50 steps
+        if self.global_step % 50 == 0 and self.global_step > 0:
+            if rt > self.ada_target:
+                # Disc overfitting — increase augmentation
+                self.augment_p = min(self.augment_p + 0.01, 0.8)
+            else:
+                # Disc not overfitting — decrease augmentation
+                self.augment_p = max(self.augment_p - 0.01, 0.0)
+
+    def _compute_fid(self, num_samples=64):
         """
         Compute a lightweight FID approximation using InceptionV3 features.
         Compares real dataset samples against generated samples.
@@ -204,29 +293,45 @@ class Trainer:
         try:
             from tensorflow.keras.applications.inception_v3 import InceptionV3, preprocess_input
 
-            inception = InceptionV3(include_top=False, pooling='avg', input_shape=(299, 299, 3))
+            # Load inception model on demand — do NOT cache in VRAM permanently
+            inception_model = InceptionV3(include_top=False, pooling='avg', input_shape=(299, 299, 3))
 
-            def get_features(images):
-                # Resize to 299x299 and convert from [-1,1] to [0,255] range
-                images = tf.image.resize(images, (299, 299))
-                images = (images + 1.0) * 127.5
-                images = preprocess_input(images)
-                return inception(images, training=False)
+            def get_features_batched(images, batch_size=4):
+                """Extract features in small batches to avoid OOM at high resolutions."""
+                all_features = []
+                for i in range(0, len(images), batch_size):
+                    chunk = images[i:i + batch_size]
+                    chunk = tf.image.resize(chunk, (299, 299))
+                    chunk = (chunk + 1.0) * 127.5
+                    chunk = preprocess_input(chunk)
+                    feats = inception_model(chunk, training=False)
+                    all_features.append(feats.numpy())
+                return np.concatenate(all_features, axis=0)
 
-            # Generate fake samples
-            noise = tf.random.normal([num_samples, self.gen.config.latent_dim])
-            # Use EMA weights for generation if available
+            # Generate fake samples and extract features per-chunk to avoid
+            # holding all full-resolution images in memory simultaneously.
             backup = self._apply_ema_to_generator()
-            fake_images = self.gen.model(noise, training=False)
+            fake_features_list = []
+            gen_batch = 4
+            for i in range(0, num_samples, gen_batch):
+                n = min(gen_batch, num_samples - i)
+                noise = tf.random.normal([n, self.gen.config.latent_dim])
+                chunk = self.gen.model(noise, training=False)
+                chunk = tf.image.resize(chunk, (299, 299))
+                chunk = (chunk + 1.0) * 127.5
+                chunk = preprocess_input(chunk)
+                fake_features_list.append(inception_model(chunk, training=False).numpy())
             self._restore_generator_weights(backup)
 
-            # Get real samples
+            # Get real samples WITHOUT advancing the training pointer
+            saved_ind = self.gen.config.train_ind
             real_images = self.dataset.batch(num_samples, 'magnified_profile')
+            self.gen.config.train_ind = saved_ind  # Restore pointer
             if real_images is None:
                 return None
 
-            fake_features = get_features(fake_images).numpy()
-            real_features = get_features(real_images).numpy()
+            fake_features = np.concatenate(fake_features_list, axis=0)
+            real_features = get_features_batched(real_images)
 
             # Compute FID: ||mu_r - mu_f||^2 + Tr(C_r + C_f - 2*sqrt(C_r @ C_f))
             mu_r, mu_f = np.mean(real_features, axis=0), np.mean(fake_features, axis=0)
@@ -241,6 +346,10 @@ class Trainer:
             sqrt_trace = np.sum(np.sqrt(eigenvalues))
 
             fid = float(np.dot(diff, diff) + np.trace(sigma_r) + np.trace(sigma_f) - 2 * sqrt_trace)
+
+            # Free InceptionV3 from VRAM — it's only needed during FID computation
+            del inception_model
+
             return fid
         except Exception as e:
             print(f"Warning: FID computation failed: {e}")
@@ -283,21 +392,21 @@ class Trainer:
                 print(f"Data batched")
                 if x is None:
                     print(f"Training Epoch Complete")
-                    trainable_data = False
+                    break
 
                 print(f"Training on batch {batch}...")
 
                 self.train_step(x) # Train on batch of images
                 print(f'Epoch {epoch} | Batch {batch} | Generator loss: {round(float(self.loss["gen"][-1]), 3)} | Discrimintator loss: {round(float(self.loss["disc"][-1]), 3)} |')
                 
-                self.plot_history() # Update history with progress
-                
-                # Generate synthetic images to the batch folder to track progress
-                # Use EMA weights for sample generation if available
-                if self.n_samples:
-                    backup = self._apply_ema_to_generator()
-                    _ = generate(self.gen, count = self.n_samples, seed_size = self.gen.config.latent_dim, save_dir = f"{self.save_dir}/synthetic_images/", filename_prefix = f'batch_{batch}_synthetic')
-                    self._restore_generator_weights(backup)
+                # Plot and generate synthetic images every 10 batches to reduce I/O overhead
+                if batch % 10 == 0:
+                    self.plot_history()
+
+                    if self.n_samples:
+                        backup = self._apply_ema_to_generator()
+                        _ = generate(self.gen, count = self.n_samples, seed_size = self.gen.config.latent_dim, save_dir = f"{self.save_dir}/synthetic_images/", filename_prefix = f'batch_{batch}_synthetic', seed = self._tracking_seed)
+                        self._restore_generator_weights(backup)
 
                 # FID-based best model checkpointing
                 if self.fid_interval > 0 and self.global_step % self.fid_interval == 0:
@@ -342,31 +451,58 @@ class Trainer:
         noise = tf.random.normal([batch_size, self.gen.config.latent_dim])
         print(f"Noise shape: {noise.shape}")
         
+        # Current augmentation probability (ADA adjusts this dynamically)
+        aug_p = self.augment_p
+
         # Train the discriminator N times
+        real_scores = None
         for _ in range(self.disc.config.training_steps):
             # Generate synthetic images outside the tape — no need to track generator ops for disc training
             synthetic_images = tf.stop_gradient(self._generate_with_fade(noise, training=True))
 
             # Apply augmentation outside the tape to avoid storing intermediate tensors in memory
-            disc_real = diff_augment(images) if self.use_augment else images
-            disc_fake = diff_augment(synthetic_images) if self.use_augment else synthetic_images
+            disc_real = diff_augment(images, p=aug_p) if self.use_augment else images
+            disc_fake = diff_augment(synthetic_images, p=aug_p) if self.use_augment else synthetic_images
 
-            # Initialize automatic differentiation during forward propogation
+            # Main discriminator tape — separate from lowres to reduce peak VRAM
             with tf.GradientTape() as tape:
                 # Forward propogate real & synethic images to the discriminator
                 output = self.disc.model(disc_real, training=True)
                 synthetic_output = self.disc.model(disc_fake, training=True)
+                real_scores = output  # Track for ADA
 
                 # Calculate discriminators gradient penalty (on unaugmented images for stable gradients)
-                gp = compute_gradient_penalty(self.disc, images, synthetic_images, self.disc.config.lambda_gp)
+                gp = compute_gradient_penalty(self.disc, images, synthetic_images)
 
                 # Calculate EMD/loss for the discriminators outputs
                 disc_loss = self.disc.get_loss(output, synthetic_output, gp, self.disc.config.lambda_gp)
 
-            # Backpropogate by calculating gradient
+            # Backpropogate main discriminator
             disc_gradients = tape.gradient(disc_loss, self.disc.model.trainable_variables)
-            # Apply gradients via the optimizer and back propogation
+            if self.grad_clip_norm > 0:
+                disc_gradients, _ = tf.clip_by_global_norm(disc_gradients, self.grad_clip_norm)
             self.disc.optimizer.apply_gradients(zip(disc_gradients, self.disc.model.trainable_variables))
+
+            # Free main disc tape activations before lowres pass
+            del tape, disc_gradients
+
+            # Multi-scale discriminator in its own tape (separate VRAM peak)
+            if self.disc_lowres is not None:
+                real_lowres = tf.image.resize(images, (256, 256))
+                fake_lowres = tf.image.resize(synthetic_images, (256, 256))
+                with tf.GradientTape() as lr_tape:
+                    real_out_lr = self.disc_lowres(real_lowres, training=True)
+                    fake_out_lr = self.disc_lowres(fake_lowres, training=True)
+                    disc_loss_lr = tf.reduce_mean(tf.cast(fake_out_lr, tf.float32)) - tf.reduce_mean(tf.cast(real_out_lr, tf.float32))
+                lowres_grads = lr_tape.gradient(disc_loss_lr, self.disc_lowres.trainable_variables)
+                if self.grad_clip_norm > 0:
+                    lowres_grads, _ = tf.clip_by_global_norm(lowres_grads, self.grad_clip_norm)
+                self.disc_lowres_optimizer.apply_gradients(zip(lowres_grads, self.disc_lowres.trainable_variables))
+                disc_loss = disc_loss + 0.5 * disc_loss_lr  # For logging
+                del lr_tape, lowres_grads, real_lowres, fake_lowres
+
+            # Free augmented copies before gen training
+            del disc_real, disc_fake
 
         # Train the generator M times
         for _ in range(self.gen.config.training_steps):
@@ -378,11 +514,20 @@ class Trainer:
                 use_fade = self._use_fade()
                 synthetic_images = self._generate_with_fade(noise, training=True)
                 # Apply differentiable augmentation to fake images for generator training
-                disc_fake = diff_augment(synthetic_images) if self.use_augment else synthetic_images
+                disc_fake = diff_augment(synthetic_images, p=aug_p) if self.use_augment else synthetic_images
                 # Forward pass generator outputs through the discriminator for loss calculation
                 synthetic_output = self.disc.model(disc_fake, training=True)
                 # Calculate generator loss for backpropogation by calculating mean of disc output
                 gen_loss = self.gen.get_loss(synthetic_output)
+
+                # Multi-scale generator loss
+                if self.disc_lowres is not None:
+                    fake_lowres = tf.image.resize(synthetic_images, (256, 256))
+                    if self.use_augment:
+                        fake_lowres = diff_augment(fake_lowres, p=aug_p)
+                    fake_out_lr = self.disc_lowres(fake_lowres, training=True)
+                    gen_loss = gen_loss + 0.5 * (-tf.reduce_mean(tf.cast(fake_out_lr, tf.float32)))
+
             # Backpropogate to calculate gradient of trainable parameters given loss
             var_list = list(self.gen.model.trainable_variables)
             # If fading, also update fade endpoint layers (e.g., toRGB_prev)
@@ -393,21 +538,28 @@ class Trainer:
                 var_list.extend(fade_vars)
 
             gen_gradients = tape.gradient(gen_loss, var_list)
+            # Apply gradient clipping if configured
+            if self.grad_clip_norm > 0:
+                gen_gradients, _ = tf.clip_by_global_norm(gen_gradients, self.grad_clip_norm)
             # Apply the gradients and update trainable parameters (w, b, etc.)
             self.gen.optimizer.apply_gradients(zip(gen_gradients, var_list))
 
         # Record loss of models to their histories
-        self.loss['gen'].append(gen_loss)
-        self.loss['disc'].append(disc_loss)
+        self.loss['gen'].append(float(gen_loss))
+        self.loss['disc'].append(float(disc_loss))
         # Increment global step after a full train step
         self.global_step += 1
         self._update_fade_completion()
         # Persist fade progress across generator/discriminator configs for resume support
-        self._sync_fade_progress(persist=True)
+        # Throttle disk writes to every 50 steps (atexit save_model covers final state)
+        self._sync_fade_progress(persist=(self.global_step % 50 == 0))
 
         # Post-step improvements
         self._update_ema()
         self._update_learning_rates()
+        self._update_adaptive_steps(disc_loss, gen_loss)
+        if real_scores is not None:
+            self._update_ada(real_scores)
 
     def _use_fade(self):
         return getattr(self.gen.config, 'fade', False) and getattr(self.gen, 'fade_endpoints', None) is not None and not self.fade_complete
@@ -441,16 +593,23 @@ class Trainer:
         # Persist configs alongside weights for reproducible snapshots
         self._save_configs(path)
 
-        # Log and plot final history
-        save_history(self.gen.config.save_dir, self.loss, self.trained_data)
-        self.plot_history()
-        
-        # Save generator and discriminator as .keras files
+        # Save generator and discriminator as .keras files first — weights are the
+        # most important artifact and must not be blocked by a plotting failure.
         self.gen.model.save(f"{path}/generator.keras")
         self.disc.model.save(f"{path}/discriminator.keras")
+
+        # Log and plot history (non-critical — failures here won't lose weights)
+        try:
+            save_history(self.gen.config.save_dir, self.loss, self.trained_data)
+            self.plot_history()
+        except Exception as e:
+            print(f"Warning: failed to save/plot history: {e}")
         # Save fade endpoints weights so mid-fade resume preserves toRGB_prev
         if getattr(self.gen, 'fade_endpoints', None) is not None:
             self.gen.fade_endpoints.save_weights(f"{path}/generator_fade_endpoints.weights.h5")
+        # Save multi-scale discriminator weights
+        if self.disc_lowres is not None:
+            self.disc_lowres.save(f"{path}/discriminator_lowres.keras")
         # Save EMA shadow weights for resume
         if self.ema_weights is not None:
             backup = self._apply_ema_to_generator()
@@ -480,8 +639,8 @@ class Trainer:
         if os.path.exists(self.save_dir) == False:
             os.makedirs(self.save_dir, exist_ok = True)
         # Plot the generator and discriminator loss history
-        plt.plot(self.loss['gen'], label = 'Generator loss')
-        plt.plot(self.loss['disc'], label = 'Discriminator loss')
+        plt.plot([float(v) for v in self.loss['gen']], label = 'Generator loss')
+        plt.plot([float(v) for v in self.loss['disc']], label = 'Discriminator loss')
         plt.title("GAN History")
         plt.legend()
         plt.ylabel("Loss")

@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from glob import glob
 from PIL import Image
 
-def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_prefix = 'synthetic'):
+def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_prefix = 'synthetic', seed = None):
     """
     Generate synthetic images using the currently loaded generator and save
     the images to the model's synthetic images folder.
@@ -16,6 +16,7 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
         seed_size (size) - Size of the input noise seed to the generator
         save_dir (str) - Folder path to save images, if none provided images are
         filename_prefix (str) - prefix to give the filename
+        seed (tf.Tensor) - Optional fixed latent vector for consistent visualization
     """
 
     # Check if the destimation exists
@@ -24,8 +25,9 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
         print(f"Output folder doesn't exist, creating directory")
         os.makedirs(f"{save_dir}", exist_ok = True) # Create folder
 
-    # Create a random fix seed for consistent visualization
-    seed = tf.random.normal([count, seed_size])
+    # Use provided seed or create a random one
+    if seed is None:
+        seed = tf.random.normal([count, seed_size])
 
     # Generate synthetic images
     synthetic_images = generator(seed, training = False)
