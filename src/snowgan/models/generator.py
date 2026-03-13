@@ -75,7 +75,7 @@ class Generator(keras.Model):
         Returns:
             tf.Tensor: Generator loss
         """
-        return -tf.reduce_mean(synthetic_difference)
+        return -tf.reduce_mean(tf.cast(synthetic_difference, tf.float32))
 
 
 def load_generator(checkpoint, config = None):

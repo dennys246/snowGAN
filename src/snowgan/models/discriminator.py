@@ -59,8 +59,9 @@ class Discriminator(keras.Model):
         Returns:
             tf.Tensor: Total discriminator loss
         """
-        wasserstein = tf.reduce_mean(synthetic_output) - tf.reduce_mean(real_output)
-        return wasserstein + lambda_gp * gp
+        # Cast to float32 for loss computation (mixed precision outputs float16)
+        wasserstein = tf.reduce_mean(tf.cast(synthetic_output, tf.float32)) - tf.reduce_mean(tf.cast(real_output, tf.float32))
+        return wasserstein + lambda_gp * tf.cast(gp, tf.float32)
     
 def load_discriminator(checkpoint, config = None):
     
