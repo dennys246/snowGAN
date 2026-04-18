@@ -124,7 +124,7 @@ those cases.
 - If a change touches a 🔴 item in [docs/UPGRADES.md](docs/UPGRADES.md), update that doc
   to mark the item resolved (or reclassify it) in the same commit.
 - If the two-lens review surfaces a new invariant worth remembering, update
-  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) alongside the code.
+  [docs/architecture.md](docs/architecture.md) alongside the code.
 - Commit messages explain *why*, not *what*. The diff already shows the what.
 - Never `git push --force` to `main`. Never `git push --no-verify`.
 

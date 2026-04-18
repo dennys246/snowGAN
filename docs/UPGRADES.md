@@ -2,7 +2,7 @@
 
 Prioritized by blast radius. Tiers labeled 🔴 (bugs that silently corrupt training or break
 features), 🟠 (production blockers — correctness, reproducibility, observability), 🟡 (code
-health / velocity), 🟢 (nice-to-have). Paired with [ARCHITECTURE.md](ARCHITECTURE.md).
+health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architecture.md).
 
 ## Tier 🔴 — correctness bugs to fix before the next training run
 

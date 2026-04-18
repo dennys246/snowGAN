@@ -56,7 +56,7 @@ snowgan --mode generate --n_samples 10
 
 - [CLAUDE.md](CLAUDE.md) — systems-engineering operating manual (session workflow,
   two-lens review, no-bandaids rule). Read this first if you're contributing.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system map: runtime flow, data pipeline,
+- [docs/architecture.md](docs/architecture.md) — system map: runtime flow, data pipeline,
   model shapes, loss math, checkpointing.
 - [docs/UPGRADES.md](docs/UPGRADES.md) — tiered roadmap of known bugs and production-
   readiness gaps with a suggested sequencing.

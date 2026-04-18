@@ -30,7 +30,7 @@ order:
    of its rules to AvAI work too: four-phase session workflow, two-lens review before
    full-suite runs, hard no-bandaids rule. These rules travel with the project family,
    not with a single repo.
-2. `~/Scripts/snowGAN/docs/ARCHITECTURE.md` — the system map you're depending on. Pay
+2. `~/Scripts/snowGAN/docs/architecture.md` — the system map you're depending on. Pay
    close attention to §4 (data pipeline), §5 (model architecture — **the input is
    rank-5** `(B, depth=2, H, W, C)`), §9 (the existing broken `inference.py`).
 3. `~/Scripts/snowGAN/docs/UPGRADES.md` — known issues in the upstream. §2 below lists
