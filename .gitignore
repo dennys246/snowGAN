@@ -181,3 +181,5 @@ outputs/
 .DS_Store
 keras/
 pytorch/
+src/**/__pycache__/
+src/**/*.egg-info/

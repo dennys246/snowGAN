@@ -47,10 +47,23 @@ This is an example of a picture generated from the snowGAN after training on ~15
 ## How to Use
 
 ```bash
-snowgan --mode train --save_dir D:/Models/snowGAN/keras/--gen_steps 4 --disc_lr 0.0001
+snowgan --mode train --save_dir D:/Models/snowGAN/keras/ --gen_steps 4 --disc_lr 0.0001
 
 snowgan --mode generate --n_samples 10
-``` 
+```
+
+## Documentation
+
+- [CLAUDE.md](CLAUDE.md) — systems-engineering operating manual (session workflow,
+  two-lens review, no-bandaids rule). Read this first if you're contributing.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system map: runtime flow, data pipeline,
+  model shapes, loss math, checkpointing.
+- [docs/UPGRADES.md](docs/UPGRADES.md) — tiered roadmap of known bugs and production-
+  readiness gaps with a suggested sequencing.
+- [docs/TRANSFER_LEARNING_PLAN.md](docs/TRANSFER_LEARNING_PLAN.md) — design for
+  transfer-learning this model's backbone into downstream metric prediction.
+- [docs/AVAI_BOOTSTRAP_PLAN.md](docs/AVAI_BOOTSTRAP_PLAN.md) — executable plan for the
+  AvAI downstream project to consume this repo as a pretrained backbone.
 
 ## TensorFlow + GPU (Blackwell) Setup
 
