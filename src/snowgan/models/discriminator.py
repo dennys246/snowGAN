@@ -28,14 +28,18 @@ class Discriminator(keras.Model):
         return self.model(inputs, training=training)
 
     def _build_model(self):
-        inputs = keras.Input(shape=(self.config.resolution[0], self.config.resolution[1], 3))
+        inputs = keras.Input(shape=(self.config.depth, self.config.resolution[0], self.config.resolution[1], self.config.channels))
         x = inputs
         use_sn = getattr(self.config, 'spectral_norm', False)
 
+        ksize = (1, self.config.kernel_size[0], self.config.kernel_size[1])
+        kstride = (1, self.config.kernel_stride[0], self.config.kernel_stride[1])
+
         for filters in self.config.filter_counts:
-            conv = keras.layers.Conv2D(filters, self.config.kernel_size, strides = self.config.kernel_stride, padding = self.config.padding)
+            conv = keras.layers.Conv3D(filters, ksize, strides=kstride, padding=self.config.padding)
             x = keras.layers.SpectralNormalization(conv)(x) if use_sn else conv(x)
-            x = keras.layers.LeakyReLU(negative_slope = self.config.negative_slope)(x)
+            x = keras.layers.LeakyReLU(negative_slope=self.config.negative_slope)(x)
+
 
         x = keras.layers.Flatten()(x)
         dense = keras.layers.Dense(1)  # No activation for WGAN
@@ -73,5 +77,5 @@ def load_discriminator(checkpoint, config = None):
 
     # Load the discriminator
     discriminator = Discriminator(config)
-    discriminator.model.build((config.resolution[0], config.resolution[1], 3))
+    discriminator.model.build((None, config.depth, config.resolution[0], config.resolution[1], config.channels))
     return discriminator

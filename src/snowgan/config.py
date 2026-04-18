@@ -67,6 +67,8 @@ config_template = {
             "datatype": "magnified_profile",
             "architecture": "discriminator",
             "resolution": [1024, 1024],
+            "channels": 3,
+            "depth": 1,
             "images": None,
             "trained_pool": None,
             "validation_pool": None,
@@ -93,8 +95,9 @@ config_template = {
             "padding": "same",
             "optimizer": "adam",
             "loss": None,
-            "train_ind": 390,
+            "train_ind": 0,
             "trained_data": [],
+            "seen_profiles": [],
             "rebuild": False,
             "fade": False,
             "fade_steps": 50000,
@@ -121,6 +124,11 @@ class build:
         else:
             print("WARNING: Config not found, building from default template...")
             config_json = copy.deepcopy(config_template)
+
+        # Backwards compatibility for new fields
+        config_json.setdefault("seen_profiles", [])
+        config_json.setdefault("channels", 3)
+        config_json.setdefault("depth", 1)
 
         self.configure(**config_json) # Build configuration
 
@@ -149,7 +157,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -166,6 +174,8 @@ class build:
         self.datatype = datatype or "magnified_profile"
         self.architecture = architecture or "generator"
         self.resolution = resolution or (1024, 1024)
+        self.channels = int(channels) if channels is not None else 3
+        self.depth = int(depth) if depth is not None else 1
         self.images = images or None 
         self.trained_pool = trained_pool or None
         self.validation_pool = validation_pool or None
@@ -174,7 +184,7 @@ class build:
         self.n_samples = int(n_samples) or 10
         self.epochs = int(epochs) or 10
         self.current_epoch = int(current_epoch) or 0
-        self.batch_size = int(batch_size) or 8
+        self.batch_size = int(batch_size) or 4
         self.training_steps = int(training_steps) or 5
         self.learning_rate = float(learning_rate) or 1e-4
         self.beta_1 = float(beta_1) or 0.5
@@ -194,6 +204,8 @@ class build:
         self.loss = loss or None
         self.train_ind = train_ind or 0
         self.trained_data = trained_data or []
+        # Track seen profiles as a set in memory for fast membership checks; still serialized as list
+        self.seen_profiles = set(seen_profiles or [])
         self.rebuild = rebuild or False
         # Progressive fade configuration and persisted progress
         self.fade = bool(fade)
@@ -230,6 +242,8 @@ class build:
             "datatype": self.datatype,
             "architecture": self.architecture,
             "resolution": self.resolution,
+            "channels": self.channels,
+            "depth": self.depth,
             "images": self.images,
             "trained_pool": self.trained_pool,
             "validation_pool": self.validation_pool,
@@ -258,6 +272,7 @@ class build:
             "loss": self.loss,
             "train_ind": self.train_ind,
             "trained_data": self.trained_data,
+            "seen_profiles": list(self.seen_profiles),
             "rebuild": self.rebuild,
             "fade": self.fade,
             "fade_steps": self.fade_steps,
@@ -386,4 +401,3 @@ def configure_generic(config, args):
     if getattr(args, "adaptive_steps", None) is not None:
         config.adaptive_steps = args.adaptive_steps
     return config
-

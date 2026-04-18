@@ -17,8 +17,10 @@ def compute_gradient_penalty(discriminator, real_images, fake_images):
     # Compute GP in float32 for numerical stability (important with mixed precision)
     real_f32 = tf.cast(real_images, tf.float32)
     fake_f32 = tf.cast(fake_images, tf.float32)
-    alpha = tf.random.uniform([batch_size, 1, 1, 1], 0., 1.)
+    # Match alpha to the full image rank for broadcasting (B, D, H, W, C)
+    alpha = tf.random.uniform([batch_size, 1, 1, 1, 1], 0., 1.)
     interpolated = alpha * real_f32 + (1 - alpha) * fake_f32
+
 
     with tf.GradientTape() as tape:
         tape.watch(interpolated)
@@ -26,6 +28,7 @@ def compute_gradient_penalty(discriminator, real_images, fake_images):
         pred = tf.cast(pred, tf.float32)
 
     grads = tape.gradient(pred, interpolated)
-    norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3]) + 1e-12)
+    grads = tape.gradient(pred, interpolated)
+    norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3, 4]) + 1e-12)
     penalty = tf.reduce_mean((norm - 1.0) ** 2)
     return penalty

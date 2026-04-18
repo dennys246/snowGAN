@@ -96,7 +96,7 @@ def parse_args():
 
     parser.add_argument('--resolution', type = set, help = 'Resolution to downsample images too (Default set to (1024, 1024))')
     parser.add_argument('--n_samples', type = int, default = 10, help = "Number of synthetic images to generate (defaults to 10)")
-    parser.add_argument('--batch_size', type = int, default = 8, help = 'Batch size (Defaults to 8)')
+    parser.add_argument('--batch_size', type = int, default = 4, help = 'Batch size (Defaults to 8)')
     parser.add_argument('--epochs', type = int, default = 10, help = 'Epochs to train on (Defaults to 10)')
     parser.add_argument('--latent_dim', type = float, default = 100, help = 'Latent dimension size (Defaults to 100)')
     parser.add_argument('--cleanup_milestone', type = int, default = 1000, help = 'Frequency (in batches) to save checkpoints and cleanup older batches (Defaults to 1000)')
