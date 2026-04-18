@@ -1,4 +1,4 @@
-import os, cv2
+import os
 import tensorflow as tf
 import numpy as np
 from matplotlib import pyplot as plt
@@ -83,7 +83,11 @@ def make_movie(save_dir = "outputs", videoname = "snowgan_synthetics.mp4", frame
         framerate (int) - Framerate to set the .mp4 video of synthetic image history
         filepath_pattern (str) - File path pattern to glob synthetic images with
     """
-    
+    # Lazy import: cv2 is only needed for video rendering, not for generate()
+    # or for `import snowgan` in downstream consumers that never call make_movie.
+    # Keeps opencv-python an optional install (see UPGRADES #29).
+    import cv2
+
     videoname = f"{save_dir}{videoname}" #Define video name using path and video
     
     # Grab all synthetic images

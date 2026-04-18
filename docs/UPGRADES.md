@@ -314,8 +314,14 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
     missing. Either restore or drop.
 
 29. **Remove dead imports / dead code.**
-    `generate.make_movie` imports `cv2`, which is only needed for that path. `click` is in
-    deps but unused. `emd_loss` in `losses.py` duplicates `Discriminator.get_loss`.
+    ~~`generate.make_movie` imports `cv2`, which is only needed for that path.~~
+    **cv2 sub-issue resolved 2026-04-18:** `import cv2` moved from `generate.py`
+    module scope into `make_movie()` body. `import snowgan` no longer requires
+    opencv-python; downstream consumers (AvAI) can depend on `snowgan` without
+    pulling the 100 MB native dependency. The video-writing path still requires
+    `opencv-python` and raises `ImportError` with a clear message if invoked
+    without it. Still outstanding: `click` is in deps but unused; `emd_loss`
+    in `losses.py` duplicates `Discriminator.get_loss`.
 
 30. **Pre-commit hooks.** `ruff`, `ruff-format`, `end-of-file-fixer`, `check-added-large-files`
     (helpful given `.keras` weights lurk).
