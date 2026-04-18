@@ -33,7 +33,7 @@ def main():
     disc_config_path = os.path.join(args.save_dir, "discriminator_config.json")
     disc_config = build(disc_config_path)
     disc_config = configure_disc(disc_config, args)
-    # Persist configured discriminator settings immediately
+     # Persist configured discriminator settings immediately
     disc_config.save_config(disc_config_path)
 
     if args.mode == "infer":

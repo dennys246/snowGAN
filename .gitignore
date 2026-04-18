@@ -181,5 +181,15 @@ outputs/
 .DS_Store
 keras/
 pytorch/
+
+keras/
+pytorch/
 src/**/__pycache__/
 src/**/*.egg-info/
+
+# Temporary files
+tmpclaude-*/
+.claude/
+tmp_check.txt
+cuda-keyring_*.deb
+

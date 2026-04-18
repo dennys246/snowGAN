@@ -91,8 +91,8 @@ def parse_args():
     parser.add_argument('--rebuild', type = bool, default = False, help = 'Whether to rebuild model from scratch (defaults to False)')
     
     parser.add_argument('--device', type = str, choices = ["cpu", "gpu"], default = "gpu", help = 'Device to run the model on (defaults to gpu)')
-    parser.add_argument('--xla', type = bool, default = False, help = 'Whether to use accelerated linear algebra (XLA) (defaults to False)')
-    parser.add_argument('--mixed_precision', type = bool, default = False, help = 'Whether to use mixed precision training (defaults to False)')
+    parser.add_argument('--xla', action='store_true', default = False, help = 'Whether to use accelerated linear algebra (XLA) (defaults to False)')
+    parser.add_argument('--mixed_precision', action='store_true', default = False, help = 'Use mixed_float16 precision to halve activation VRAM (safe to enable mid-training)')
 
     parser.add_argument('--resolution', type = set, help = 'Resolution to downsample images too (Default set to (1024, 1024))')
     parser.add_argument('--n_samples', type = int, default = 10, help = "Number of synthetic images to generate (defaults to 10)")
@@ -126,6 +126,18 @@ def parse_args():
     parser.add_argument('--disc_lambda_gp', type = int, help = 'Disciminators lambda GP (Defaults to 10.0)')
     parser.add_argument('--disc_steps', type = int, help = 'Steps the discriminator takes per batch (Defaults to 1)')
     parser.add_argument('--disc_filters', type = str, help = 'Discriminator filters per convolution layer (Defaults to [64, 128, 256, 512, 1024])')
+
+    # Post-progressive training improvements
+    parser.add_argument('--spectral_norm', action='store_true', default=None, help='Enable spectral normalization on the discriminator')
+    parser.add_argument('--augment', action='store_true', default=None, help='Enable differentiable augmentation during training')
+    parser.add_argument('--lr_decay', type=str, default=None, choices=['cosine'], help='Learning rate decay schedule (e.g. "cosine")')
+    parser.add_argument('--lr_min', type=float, default=None, help='Minimum learning rate for LR decay (Defaults to 1e-7)')
+    parser.add_argument('--ema_decay', type=float, default=None, help='EMA decay for generator shadow weights (e.g. 0.999, 0 to disable)')
+    parser.add_argument('--fid_interval', type=int, default=None, help='Steps between FID evaluations (0 to disable)')
+    parser.add_argument('--multiscale_disc', action='store_true', default=None, help='Enable multi-scale discriminator (adds 256x256 head)')
+    parser.add_argument('--grad_clip_norm', type=float, default=None, help='Global gradient norm clipping (0 to disable)')
+    parser.add_argument('--ada_target', type=float, default=None, help='ADA target disc accuracy on reals (e.g. 0.6, 0 to disable)')
+    parser.add_argument('--adaptive_steps', action='store_true', default=None, help='Enable adaptive disc/gen training step ratio')
 
     # Parse the arguments
     return parser.parse_args()

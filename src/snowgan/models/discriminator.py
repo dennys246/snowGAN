@@ -30,16 +30,20 @@ class Discriminator(keras.Model):
     def _build_model(self):
         inputs = keras.Input(shape=(self.config.depth, self.config.resolution[0], self.config.resolution[1], self.config.channels))
         x = inputs
+        use_sn = getattr(self.config, 'spectral_norm', False)
 
         ksize = (1, self.config.kernel_size[0], self.config.kernel_size[1])
         kstride = (1, self.config.kernel_stride[0], self.config.kernel_stride[1])
 
         for filters in self.config.filter_counts:
-            x = keras.layers.Conv3D(filters, ksize, strides = kstride, padding = self.config.padding)(x)
-            x = keras.layers.LeakyReLU(negative_slope = self.config.negative_slope)(x)
+            conv = keras.layers.Conv3D(filters, ksize, strides=kstride, padding=self.config.padding)
+            x = keras.layers.SpectralNormalization(conv)(x) if use_sn else conv(x)
+            x = keras.layers.LeakyReLU(negative_slope=self.config.negative_slope)(x)
+
 
         x = keras.layers.Flatten()(x)
-        outputs = keras.layers.Dense(1)(x)  # No activation for WGAN
+        dense = keras.layers.Dense(1)  # No activation for WGAN
+        outputs = keras.layers.SpectralNormalization(dense)(x) if use_sn else dense(x)
 
         return keras.Model(inputs, outputs, name="Discriminator")
 
@@ -59,8 +63,9 @@ class Discriminator(keras.Model):
         Returns:
             tf.Tensor: Total discriminator loss
         """
-        wasserstein = tf.reduce_mean(synthetic_output) - tf.reduce_mean(real_output)
-        return wasserstein + lambda_gp * gp
+        # Cast to float32 for loss computation (mixed precision outputs float16)
+        wasserstein = tf.reduce_mean(tf.cast(synthetic_output, tf.float32)) - tf.reduce_mean(tf.cast(real_output, tf.float32))
+        return wasserstein + lambda_gp * tf.cast(gp, tf.float32)
     
 def load_discriminator(checkpoint, config = None):
     

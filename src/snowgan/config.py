@@ -102,7 +102,17 @@ config_template = {
             "fade": False,
             "fade_steps": 50000,
             "fade_step": 0,
-            "cleanup_milestone": 1000
+            "cleanup_milestone": 1000,
+            "spectral_norm": False,
+            "augment": False,
+            "lr_decay": None,
+            "lr_min": 1e-7,
+            "ema_decay": 0.0,
+            "fid_interval": 0,
+            "multiscale_disc": False,
+            "grad_clip_norm": 0.0,
+            "ada_target": 0.0,
+            "adaptive_steps": False
 }
 
 class build:
@@ -147,7 +157,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -209,6 +219,17 @@ class build:
             except (TypeError, ValueError):
                 cleanup_value = 1000
         self.cleanup_milestone = max(0, cleanup_value)
+        # Post-progressive training improvements
+        self.spectral_norm = bool(spectral_norm)
+        self.augment = bool(augment)
+        self.lr_decay = lr_decay  # "cosine" or None
+        self.lr_min = float(lr_min) if lr_min is not None else 1e-7
+        self.ema_decay = float(ema_decay) if ema_decay else 0.0
+        self.fid_interval = int(fid_interval) if fid_interval else 0
+        self.multiscale_disc = bool(multiscale_disc)
+        self.grad_clip_norm = float(grad_clip_norm) if grad_clip_norm else 0.0
+        self.ada_target = float(ada_target) if ada_target else 0.0
+        self.adaptive_steps = bool(adaptive_steps)
 
         default_checkpoint_filename = "generator.keras" if self.architecture == "generator" else "discriminator.keras"
         self.checkpoint = _normalize_checkpoint(self.save_dir, checkpoint, default_checkpoint_filename)
@@ -256,7 +277,17 @@ class build:
             "fade": self.fade,
             "fade_steps": self.fade_steps,
             "fade_step": self.fade_step,
-            "cleanup_milestone": self.cleanup_milestone
+            "cleanup_milestone": self.cleanup_milestone,
+            "spectral_norm": self.spectral_norm,
+            "augment": self.augment,
+            "lr_decay": self.lr_decay,
+            "lr_min": self.lr_min,
+            "ema_decay": self.ema_decay,
+            "fid_interval": self.fid_interval,
+            "multiscale_disc": self.multiscale_disc,
+            "grad_clip_norm": self.grad_clip_norm,
+            "ada_target": self.ada_target,
+            "adaptive_steps": self.adaptive_steps
         }
         return config
 
@@ -348,4 +379,25 @@ def configure_generic(config, args):
     if args.fade_steps: config.fade_steps = args.fade_steps
     if getattr(args, "cleanup_milestone", None) is not None:
         config.cleanup_milestone = args.cleanup_milestone
+    # Post-progressive training options
+    if getattr(args, "spectral_norm", None) is not None:
+        config.spectral_norm = args.spectral_norm
+    if getattr(args, "augment", None) is not None:
+        config.augment = args.augment
+    if getattr(args, "lr_decay", None) is not None:
+        config.lr_decay = args.lr_decay
+    if getattr(args, "lr_min", None) is not None:
+        config.lr_min = args.lr_min
+    if getattr(args, "ema_decay", None) is not None:
+        config.ema_decay = args.ema_decay
+    if getattr(args, "fid_interval", None) is not None:
+        config.fid_interval = args.fid_interval
+    if getattr(args, "multiscale_disc", None) is not None:
+        config.multiscale_disc = args.multiscale_disc
+    if getattr(args, "grad_clip_norm", None) is not None:
+        config.grad_clip_norm = args.grad_clip_norm
+    if getattr(args, "ada_target", None) is not None:
+        config.ada_target = args.ada_target
+    if getattr(args, "adaptive_steps", None) is not None:
+        config.adaptive_steps = args.adaptive_steps
     return config
