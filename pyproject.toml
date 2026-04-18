@@ -18,8 +18,7 @@ dependencies = [
   "pillow>=9.5",
   "datasets>=2.16",
   "click>=8.1",  # optional, if you use click/argparse
-  "tensorflow>=2.15; python_version < '3.11'",
-  "tf-nightly>=2.17.0.dev20240220; python_version >= '3.11'",
+  "tensorflow>=2.18",
 ]
 
 [tool.setuptools.packages.find]
