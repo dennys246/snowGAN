@@ -308,6 +308,21 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
     `dict[(site, column, core), list[profile_idx]]`, then drop `self.manifest`
     entirely — iterate via the index and `self.dataset[i]`.
 
+    **Partially resolved 2026-05-06:** `DataManager.pair_index` cached property added
+    ([data/dataset.py](../src/snowgan/data/dataset.py)) returning
+    `dict[(site, column, core), list[(core_idx, profile_idx)]]` — the full Cartesian
+    product of cores × magnified profiles per group, computed in one linear pass over
+    `self.manifest`. Shape diverges from the original ask (`list[profile_idx]` →
+    `list[(core_idx, profile_idx)]`) to support AvAI's group-level transfer-learning
+    splits, which need every cross-pair per group as a deliberate combinatorial
+    augmentation. The accessor is non-mutating and is *not* used by the GAN trainer —
+    `batch_merged`'s seen-profiles / per-epoch semantics are unchanged. Regression
+    coverage at [tests/unit/test_dataset.py](../tests/unit/test_dataset.py).
+    Still outstanding: drop `self.manifest` in favor of iterating the index plus
+    `self.dataset[i]`, which requires `batch_merged` to consult the index instead
+    of linear-scanning the manifest. That is a separate cross-lens refactor (it
+    couples to #10's `tf.data` pipeline rebuild).
+
 ## Tier 🟢 — nice-to-have
 
 28. **Submodule cleanup.** `.gitmodules` references `external/snowMaker` but the directory is

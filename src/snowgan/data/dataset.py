@@ -1,3 +1,5 @@
+from functools import cached_property
+
 from datasets import load_dataset
 import tensorflow as tf
 import numpy as np
@@ -32,6 +34,44 @@ class DataManager:
         self.seen_profiles = set(getattr(self.config, "seen_profiles", []) or [])
         self.config.seen_profiles = self.seen_profiles
         self.seen_cores = set()
+
+    @cached_property
+    def pair_index(self):
+        """Cross-pair index of the manifest, grouped by (site, column, core).
+
+        Returns:
+            dict[tuple, list[tuple[int, int]]] — keys are ``(site, column, core)``
+            tuples for every group that has at least one core (datatype=0) and at
+            least one magnified profile (datatype=2). Values are the full Cartesian
+            product ``[(core_idx, profile_idx), ...]`` of every core row index ×
+            every magnified-profile row index that share the group key.
+
+        Intended for downstream consumers (e.g. AvAI transfer learning) that split
+        at the group level to prevent leakage and want every cross-pair per group
+        as a combinatorial augmentation. The GAN trainer's ``batch_merged`` does
+        not use this — it has different (per-epoch, no-reuse) pairing semantics.
+
+        Read-only and side-effect-free: does not touch ``self.config``,
+        ``self.seen_profiles``, ``self.seen_cores``, or ``self.config.train_ind``.
+        Cached on the instance after the first access.
+        """
+        cores: dict[tuple, list[int]] = {}
+        profiles: dict[tuple, list[int]] = {}
+        for idx in range(len(self.manifest)):
+            meta = self._get_manifest_entry(idx)
+            if meta is None:
+                continue
+            datatype = meta.get("datatype")
+            if datatype != 0 and datatype != 2:
+                continue
+            key = (meta.get("site"), meta.get("column"), meta.get("core"))
+            bucket = cores if datatype == 0 else profiles
+            bucket.setdefault(key, []).append(idx)
+
+        return {
+            key: [(c, p) for c in cores[key] for p in profiles[key]]
+            for key in cores.keys() & profiles.keys()
+        }
 
     def _get_manifest_entry(self, index):
         if index < 0 or index >= len(self.manifest):
