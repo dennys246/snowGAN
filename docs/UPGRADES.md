@@ -29,6 +29,13 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
      backbone frozen (`layer.trainable = False` on all conv blocks).
    - `base.layers[-2].output` is brittle; name the Flatten layer (`name="features"`) and
      reference it by name so architecture tweaks don't silently move the tap.
+     **Cross-repo contract note (2026-04-19):** AvAI Phase 3 hard-commits to
+     `name="features"` as the agreed tap name — see
+     `~/Scripts/AvAI/src/avai/backbone.py::prepare_backbone_for_transfer` and the
+     `fake_discriminator` fixture in `~/Scripts/AvAI/tests/conftest.py`. Changing
+     this name in the snowGAN discriminator is a cross-repo breaking change; ship
+     it in coordination with AvAI's backbone wrapper or AvAI's `prepare_backbone_
+     for_transfer` will fail at the `model.get_layer("features")` call.
 
 4. **`configure_device` sets env vars after TF is already imported.**
    [main.py:1-8](../src/snowgan/main.py#L1-L8) triggers `import tensorflow` transitively
