@@ -41,7 +41,10 @@ class Discriminator(keras.Model):
             x = keras.layers.LeakyReLU(negative_slope=self.config.negative_slope)(x)
 
 
-        x = keras.layers.Flatten()(x)
+        # name="features": cross-repo contract with AvAI Phase 3 transfer
+        # learning, which calls model.get_layer("features") on the loaded
+        # discriminator. See docs/UPGRADES.md §3.
+        x = keras.layers.Flatten(name="features")(x)
         dense = keras.layers.Dense(1)  # No activation for WGAN
         outputs = keras.layers.SpectralNormalization(dense)(x) if use_sn else dense(x)
 
