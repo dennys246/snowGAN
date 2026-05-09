@@ -5,6 +5,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from glob import glob
 
+from snowgan.checkpoint import resolve_weights_path, to_weights_path
 from snowgan.losses import compute_gradient_penalty
 from snowgan.generate import generate, make_movie
 from snowgan.log import save_history, load_history
@@ -25,23 +26,21 @@ class Trainer:
         #if not self.gen.built:
         #    self.gen.build(self.gen.config.resolution)
 
-        # Attempt to load weights if they haven't been built yet
-        if os.path.exists(self.gen.config.checkpoint):
-            try:
-                # Load weights from .keras file
-                self.gen.model.load_weights(self.gen.config.checkpoint)
-                print(f"Generator weights loaded successfully from {self.gen.config.checkpoint}")
-            except Exception as e:
-                print(f"Warning: could not load generator weights: {e}. Using freshly initialized weights.")
+        # Attempt to load weights if a checkpoint exists. load_weights raises
+        # on shape mismatch — we let it. Silently re-initializing on mismatch
+        # would mask the exact failure mode UPGRADES #17 cataloged: a config
+        # change drifts the architecture and the trained weights are quietly
+        # discarded. Fail loud instead so the misconfiguration surfaces.
+        gen_weights_path = resolve_weights_path(self.gen.config.checkpoint)
+        if gen_weights_path is not None:
+            self.gen.model.load_weights(gen_weights_path)
+            print(f"Generator weights loaded from {gen_weights_path}")
             # Load fade endpoints weights (toRGB_prev) for mid-fade resume
             if getattr(self.gen, 'fade_endpoints', None) is not None:
                 fade_weights_path = os.path.join(os.path.dirname(self.gen.config.checkpoint), "generator_fade_endpoints.weights.h5")
                 if os.path.exists(fade_weights_path):
-                    try:
-                        self.gen.fade_endpoints.load_weights(fade_weights_path)
-                        print(f"Generator fade endpoints loaded from {fade_weights_path}")
-                    except Exception as e:
-                        print(f"Warning: could not load fade endpoint weights: {e}. Using freshly initialized weights.")
+                    self.gen.fade_endpoints.load_weights(fade_weights_path)
+                    print(f"Generator fade endpoints loaded from {fade_weights_path}")
         else:
             print("Generator saved weights not found, new model initialized")
 
@@ -52,15 +51,12 @@ class Trainer:
         #if not self.disc.built:
         #    self.disc.build(self.disc.config.resolution)
 
-        # If weights haven't been initialized
-        if os.path.exists(self.disc.config.checkpoint):
-            try:
-                self.disc.model.load_weights(self.disc.config.checkpoint)
-                print(f"Discriminator weights loaded successfully from {self.disc.config.checkpoint}")
-            except Exception as e:
-                print(f"Warning: could not load discriminator weights: {e}. Using freshly initialized weights.")
+        disc_weights_path = resolve_weights_path(self.disc.config.checkpoint)
+        if disc_weights_path is not None:
+            self.disc.model.load_weights(disc_weights_path)
+            print(f"Discriminator weights loaded from {disc_weights_path}")
         else:
-            print("Disciminator saved weights not found, new model initialized")
+            print("Discriminator saved weights not found, new model initialized")
 
         self.save_dir = self.gen.config.save_dir # Save dictory for the model and it's generated images
 
@@ -174,13 +170,12 @@ class Trainer:
         self.disc_lowres_optimizer = None
         if self.multiscale_disc:
             self._build_lowres_disc()
-            lowres_path = os.path.join(os.path.dirname(self.disc.config.checkpoint), "discriminator_lowres.keras")
-            if os.path.exists(lowres_path):
-                try:
-                    self.disc_lowres.load_weights(lowres_path)
-                    print(f"Low-res discriminator loaded from {lowres_path}")
-                except Exception as e:
-                    print(f"Warning: could not load low-res disc weights: {e}. Initialized fresh.")
+            lowres_dir = os.path.dirname(self.disc.config.checkpoint)
+            lowres_declared = os.path.join(lowres_dir, "discriminator_lowres.weights.h5")
+            lowres_resolved = resolve_weights_path(lowres_declared)
+            if lowres_resolved is not None:
+                self.disc_lowres.load_weights(lowres_resolved)
+                print(f"Low-res discriminator loaded from {lowres_resolved}")
 
     def _init_ema(self):
         """Initialize EMA shadow weights as a copy of current generator weights on CPU to save VRAM."""
@@ -639,13 +634,18 @@ class Trainer:
             path = self.save_dir
         
         os.makedirs(path, exist_ok = True)
-        # Persist configs alongside weights for reproducible snapshots
+        # Persist configs alongside weights for reproducible snapshots. The
+        # config JSONs are the architecture sidecar — downstream consumers
+        # (e.g. AvAI) reconstruct the model via Generator(config) /
+        # Discriminator(config) and then load_weights from the *.weights.h5
+        # files written below. See docs/UPGRADES.md #17.
         self._save_configs(path)
 
-        # Save generator and discriminator as .keras files first — weights are the
-        # most important artifact and must not be blocked by a plotting failure.
-        self.gen.model.save(f"{path}/generator.keras")
-        self.disc.model.save(f"{path}/discriminator.keras")
+        # Save weights-only (no architecture, no Lambda layer serialization).
+        # Weights are the most important artifact and must not be blocked by
+        # a plotting failure.
+        self.gen.model.save_weights(f"{path}/generator.weights.h5")
+        self.disc.model.save_weights(f"{path}/discriminator.weights.h5")
 
         # Log and plot history (non-critical — failures here won't lose weights)
         try:
@@ -658,7 +658,7 @@ class Trainer:
             self.gen.fade_endpoints.save_weights(f"{path}/generator_fade_endpoints.weights.h5")
         # Save multi-scale discriminator weights
         if self.disc_lowres is not None:
-            self.disc_lowres.save(f"{path}/discriminator_lowres.keras")
+            self.disc_lowres.save_weights(f"{path}/discriminator_lowres.weights.h5")
         # Save EMA shadow weights for resume
         if self.ema_weights is not None:
             backup = self._apply_ema_to_generator()

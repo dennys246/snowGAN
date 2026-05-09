@@ -62,7 +62,7 @@ def _normalize_checkpoint(save_dir: str, checkpoint: Optional[str], default_file
 
 config_template = {
             "save_dir": "keras/snowgan/",
-            "checkpoint": "keras/snowgan/discriminator.keras",
+            "checkpoint": "keras/snowgan/discriminator.weights.h5",
             "dataset": "rmdig/rocky_mountain_snowpack",
             "datatype": "magnified_profile",
             "architecture": "discriminator",
@@ -234,7 +234,7 @@ class build:
         self.adaptive_steps = bool(adaptive_steps)
         self.seed = int(seed) if seed is not None else 42
 
-        default_checkpoint_filename = "generator.keras" if self.architecture == "generator" else "discriminator.keras"
+        default_checkpoint_filename = "generator.weights.h5" if self.architecture == "generator" else "discriminator.weights.h5"
         self.checkpoint = _normalize_checkpoint(self.save_dir, checkpoint, default_checkpoint_filename)
 
     def dump(self):
@@ -303,9 +303,9 @@ def load_gen_config(config_filepath, config = None):
     if not os.path.exists(config_filepath):
         split = config_filepath.split("/")
         gen_config.save_dir = _normalize_save_dir(gen_config.save_dir or "/".join(split[:-1]))
-        gen_config.checkpoint = _normalize_checkpoint(gen_config.save_dir, gen_config.checkpoint or "keras/snowgan/generator.keras", "generator.keras")
+        gen_config.checkpoint = _normalize_checkpoint(gen_config.save_dir, gen_config.checkpoint or "keras/snowgan/generator.weights.h5", "generator.weights.h5")
         gen_config.architecture = "generator"
-    return gen_config 
+    return gen_config
 
 
 def configure_gen(config, args):
@@ -315,7 +315,7 @@ def configure_gen(config, args):
     if config.architecture == "discriminator":
         print(f"Setting Gen Default!")
         config.architecture = "generator"
-        config.checkpoint = "keras/snowgan/generator.keras"
+        config.checkpoint = "keras/snowgan/generator.weights.h5"
         config.training_steps = 3
         config.learning_rate = 1e-4
 
@@ -329,7 +329,7 @@ def configure_gen(config, args):
     if args.gen_negative_slope: config.negative_slope = args.gen_negative_slope
     if args.gen_steps: config.training_steps = args.gen_steps
     if args.gen_filters: config.filter_counts = [int(datum) for datum in args.gen_filters.split(' ')]
-    config.checkpoint = _normalize_checkpoint(config.save_dir, config.checkpoint, "generator.keras")
+    config.checkpoint = _normalize_checkpoint(config.save_dir, config.checkpoint, "generator.weights.h5")
     return config
     
 
@@ -340,9 +340,9 @@ def load_disc_config(config_filepath, config = None):
     if not os.path.exists(config_filepath):
         split = config_filepath.split("/")
         disc_config.save_dir = _normalize_save_dir(disc_config.save_dir or "/".join(split[:-1]))
-        disc_config.checkpoint = _normalize_checkpoint(disc_config.save_dir, disc_config.checkpoint or "keras/snowgan/discriminator.keras", "discriminator.keras")
+        disc_config.checkpoint = _normalize_checkpoint(disc_config.save_dir, disc_config.checkpoint or "keras/snowgan/discriminator.weights.h5", "discriminator.weights.h5")
         disc_config.architecture = "discriminator"
-    return disc_config 
+    return disc_config
 
 
 def configure_disc(config, args):
@@ -365,7 +365,7 @@ def configure_disc(config, args):
         config.learning_rate = 1e-4
     if config.lambda_gp is None:
         config.lambda_gp = 10.0
-    config.checkpoint = _normalize_checkpoint(config.save_dir, config.checkpoint, "discriminator.keras")
+    config.checkpoint = _normalize_checkpoint(config.save_dir, config.checkpoint, "discriminator.weights.h5")
     return config
 
 def configure_generic(config, args):
