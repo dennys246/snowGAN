@@ -45,13 +45,22 @@ class Discriminator(keras.Model):
         # learning, which calls model.get_layer("features") on the loaded
         # discriminator. See docs/UPGRADES.md §3.
         x = keras.layers.Flatten(name="features")(x)
-        dense = keras.layers.Dense(1)  # No activation for WGAN
+        # Pin the critic's scalar output head to float32 under any mixed
+        # precision policy. Wasserstein scores are unbounded, so fp16 can
+        # overflow during the WGAN-GP gradient penalty's interpolation pass
+        # and corrupt the entire loss. UPGRADES #15.
+        dense = keras.layers.Dense(1, dtype="float32")  # No activation for WGAN
         outputs = keras.layers.SpectralNormalization(dense)(x) if use_sn else dense(x)
 
         return keras.Model(inputs, outputs, name="Discriminator")
 
     def get_optimizer(self):
-        return keras.optimizers.Adam(learning_rate = self.config.learning_rate, beta_1 = self.config.beta_1, beta_2 = self.config.beta_2)
+        optimizer = keras.optimizers.Adam(learning_rate = self.config.learning_rate, beta_1 = self.config.beta_1, beta_2 = self.config.beta_2)
+        # Wrap in LossScaleOptimizer under mixed_float16 so fp16 gradients
+        # don't silently underflow to zero (UPGRADES #15).
+        if keras.mixed_precision.global_policy().name == "mixed_float16":
+            optimizer = keras.mixed_precision.LossScaleOptimizer(optimizer)
+        return optimizer
 
     def get_loss(self, real_output, synthetic_output, gp, lambda_gp):
         """

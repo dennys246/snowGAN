@@ -46,7 +46,11 @@ class Generator(keras.Model):
             x = keras.layers.LeakyReLU(self.config.negative_slope)(x)
             feats.append(x)
 
-        curr_img = keras.layers.Conv3DTranspose(self.config.channels, ksize, strides=kstride, padding=self.config.padding, activation=self.config.final_activation, use_bias=False, name="toRGB_curr")(x)
+        # Pin the output head to float32 even under a mixed_float16 global
+        # policy. The final tanh saturates near ±1; computing it in fp16
+        # underflows around the asymptotes and overflows the upstream
+        # gradient. UPGRADES #15 cataloged this as a 🟠 correctness item.
+        curr_img = keras.layers.Conv3DTranspose(self.config.channels, ksize, strides=kstride, padding=self.config.padding, activation=self.config.final_activation, use_bias=False, name="toRGB_curr", dtype="float32")(x)
 
         base_model = keras.Model(inputs, curr_img, name="Generator")
 
@@ -76,7 +80,12 @@ class Generator(keras.Model):
         return base_model, fade_model
 
     def get_optimizer(self):
-        return keras.optimizers.Adam(learning_rate = self.config.learning_rate, beta_1 = self.config.beta_1, beta_2 = self.config.beta_2)
+        optimizer = keras.optimizers.Adam(learning_rate = self.config.learning_rate, beta_1 = self.config.beta_1, beta_2 = self.config.beta_2)
+        # Wrap in LossScaleOptimizer under mixed_float16 so fp16 gradients
+        # don't silently underflow to zero below ~1e-7 (UPGRADES #15).
+        if keras.mixed_precision.global_policy().name == "mixed_float16":
+            optimizer = keras.mixed_precision.LossScaleOptimizer(optimizer)
+        return optimizer
 
     def get_loss(self, synthetic_difference):
         """

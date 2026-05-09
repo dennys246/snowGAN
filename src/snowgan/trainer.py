@@ -255,7 +255,8 @@ class Trainer:
             x = keras.layers.SpectralNormalization(conv)(x) if use_sn else conv(x)
             x = keras.layers.LeakyReLU(negative_slope=0.25)(x)
         x = keras.layers.Flatten()(x)
-        dense = keras.layers.Dense(1)
+        # Pin scalar critic output to float32 under mixed precision (UPGRADES #15).
+        dense = keras.layers.Dense(1, dtype="float32")
         outputs = keras.layers.SpectralNormalization(dense)(x) if use_sn else dense(x)
         self.disc_lowres = keras.Model(inputs, outputs, name="DiscriminatorLowRes")
         self.disc_lowres_optimizer = keras.optimizers.Adam(
@@ -263,6 +264,10 @@ class Trainer:
             beta_1=self.disc.config.beta_1,
             beta_2=self.disc.config.beta_2
         )
+        # Wrap in LossScaleOptimizer under mixed_float16 so the lowres
+        # discriminator's fp16 gradients don't underflow (UPGRADES #15).
+        if keras.mixed_precision.global_policy().name == "mixed_float16":
+            self.disc_lowres_optimizer = keras.mixed_precision.LossScaleOptimizer(self.disc_lowres_optimizer)
         print(f"Multi-scale discriminator built (256x256, {self.disc_lowres.count_params()} params)")
 
     def _update_adaptive_steps(self, disc_loss, gen_loss):
