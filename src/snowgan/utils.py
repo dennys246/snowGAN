@@ -84,7 +84,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description = "The snowGAN model is used to train a GAN on a dataset of snow samples magnified on a crystal card. You can define how the model runs by the number of epochs, batch sizes and other parameters. You can also pass in a path to a pre-trained snowGAN to accomplish transfer learning on rebuild GAN tasks!")
 
     # Add command-line arguments
-    parser.add_argument('--mode', type = str, choices = ["train", "generate", "infer"], required = True, help = "Mode to run the model in: train the GAN, generate synthetics, or run inference on avalanche/wind labels")
+    parser.add_argument('--mode', type = str, choices = ["train", "generate", "infer"], required = True, help = "Mode to run the model in: train the GAN or generate synthetics. ('infer' is retained as a redirect — inference moved to the AvAI library.)")
     parser.add_argument('--dataset_dir', type = str, default = 'rmdig/rocky_mountain_snowpack', help = "Path to the Rocky Mountain Snowpack dataset, if none provided it will download directly from HF remote repository")
     parser.add_argument('--save_dir', type = str, default = "keras/snowgan/", help = "Path to save results where a pre-trained model may be found (defaults to keras/snowgan/)")
     
@@ -103,7 +103,6 @@ def parse_args():
     # Use None defaults so resume can rely on persisted config unless explicitly overridden
     parser.add_argument('--fade', type = bool, default = None, help = 'Enable progressive fade-in between resolutions (set True/False to override config)')
     parser.add_argument('--fade_steps', type = int, default = None, help = 'Steps to ramp alpha from 0 to 1 during fade-in (override config if set)')
-    parser.add_argument('--infer_samples', type = int, default = 1000, help = 'Number of labeled images to evaluate during inference (Defaults to 1000). Datatype fixed to magnified_profile.')
 
     parser.add_argument('--gen_checkpoint', type = str, help = 'Path to a pre-trained generator model to load')
     parser.add_argument('--gen_kernel', type = str, help = 'Generator kernel size (Defaults to [5, 5])')
