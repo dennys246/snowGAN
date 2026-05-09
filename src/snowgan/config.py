@@ -112,7 +112,8 @@ config_template = {
             "multiscale_disc": False,
             "grad_clip_norm": 0.0,
             "ada_target": 0.0,
-            "adaptive_steps": False
+            "adaptive_steps": False,
+            "seed": 42
 }
 
 class build:
@@ -129,6 +130,7 @@ class build:
         config_json.setdefault("seen_profiles", [])
         config_json.setdefault("channels", 3)
         config_json.setdefault("depth", 1)
+        config_json.setdefault("seed", 42)
 
         self.configure(**config_json) # Build configuration
 
@@ -157,7 +159,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -230,6 +232,7 @@ class build:
         self.grad_clip_norm = float(grad_clip_norm) if grad_clip_norm else 0.0
         self.ada_target = float(ada_target) if ada_target else 0.0
         self.adaptive_steps = bool(adaptive_steps)
+        self.seed = int(seed) if seed is not None else 42
 
         default_checkpoint_filename = "generator.keras" if self.architecture == "generator" else "discriminator.keras"
         self.checkpoint = _normalize_checkpoint(self.save_dir, checkpoint, default_checkpoint_filename)
@@ -287,7 +290,8 @@ class build:
             "multiscale_disc": self.multiscale_disc,
             "grad_clip_norm": self.grad_clip_norm,
             "ada_target": self.ada_target,
-            "adaptive_steps": self.adaptive_steps
+            "adaptive_steps": self.adaptive_steps,
+            "seed": self.seed
         }
         return config
 

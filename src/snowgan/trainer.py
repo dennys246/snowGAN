@@ -83,6 +83,16 @@ class Trainer:
         self._save_interval = self.cleanup_milestone if self.cleanup_milestone > 0 else 1000
 
         self.dataset = DataManager(self.gen.config)
+        # Persist train/val/test split on first run so downstream consumers
+        # (AvAI's evaluation against test_pool) see a stable group-level split
+        # of (site, column, core) triples. Idempotent if already derived.
+        previously_split = self.gen.config.test_pool is not None
+        self.dataset.derive_splits()
+        if not previously_split:
+            try:
+                self.gen.config.save_config()
+            except Exception as e:
+                print(f"Warning: failed to persist derived data splits: {e}")
         # Keep seen profile tracking persistent across configs
         self.gen.config.seen_profiles = self.dataset.seen_profiles
         self.disc.config.seen_profiles = self.dataset.seen_profiles
