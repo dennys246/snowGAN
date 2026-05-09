@@ -14,28 +14,21 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
    once in the loss, or stop multiplying in the loss. Add a unit test that asserts the
    penalty magnitude for a known input.
 
-2. **`_ensure_depth_alignment` silently discards trained weights.**
-   [trainer.py:287-305](../src/snowgan/trainer.py#L287-L305) rebuilds generator/discriminator
-   via `type(self.gen)(self.gen.config)` when batch depth changes, with no weight migration.
-   A run that sees a depth-1 batch after a depth-2 batch (or vice versa) restarts from random
-   init. Fix: refuse to mix depths within a run (assert), or reinitialize only the layers
-   whose shape depends on depth and port weights for the rest.
+2. ~~**`_ensure_depth_alignment` silently discards trained weights.**~~
+   **Resolved 2026-05-09 (PR #12).** `DataManager.PAIR_DEPTH = 2` is now the
+   single source of truth for the trainer's expected stack depth.
+   `Trainer.__init__` syncs `config.depth = PAIR_DEPTH` and rebuilds gen/disc
+   *before* loading weights — fresh models, no weights to lose. The per-batch
+   `_ensure_depth_alignment` is now a hard assertion that surfaces upstream
+   contract violations as `RuntimeError`. Co-resolves #40.
 
-3. **`inference.run_inference` is broken end-to-end.**
-   - Feeds rank-3 `(H,W,C)` tensors into a model whose input is rank-5 `(depth,H,W,C)` →
-     shape error on first batch. Stack to `(1,H,W,C)` at minimum (or tile to `depth=2`).
-   - Never trains the heads it builds (`test_on_batch` only) — "avalanches spotted accuracy"
-     is random-init noise. Replace with `model.fit()` against a train/val split, with the
-     backbone frozen (`layer.trainable = False` on all conv blocks).
-   - `base.layers[-2].output` is brittle; name the Flatten layer (`name="features"`) and
-     reference it by name so architecture tweaks don't silently move the tap.
-     **Cross-repo contract note (2026-04-19):** AvAI Phase 3 hard-commits to
-     `name="features"` as the agreed tap name — see
-     `~/Scripts/AvAI/src/avai/backbone.py::prepare_backbone_for_transfer` and the
-     `fake_discriminator` fixture in `~/Scripts/AvAI/tests/conftest.py`. Changing
-     this name in the snowGAN discriminator is a cross-repo breaking change; ship
-     it in coordination with AvAI's backbone wrapper or AvAI's `prepare_backbone_
-     for_transfer` will fail at the `model.get_layer("features")` call.
+3. ~~**`inference.run_inference` is broken end-to-end.**~~
+   **Resolved 2026-05-09 (PRs #7 + #11).** The Flatten layer was renamed to
+   `name="features"` (PR #7) so AvAI's `prepare_backbone_for_transfer` resolves
+   the tap by name. The broken `inference.py` itself was deleted (PR #11);
+   `--mode infer` now redirects users to AvAI with `SystemExit(1)`. The
+   transfer-learning pipeline lives in [AvAI](https://github.com/dennys246/AvAI)
+   going forward.
 
 4. **`configure_device` sets env vars after TF is already imported.**
    [main.py:1-8](../src/snowgan/main.py#L1-L8) triggers `import tensorflow` transitively
@@ -70,14 +63,12 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
     them dead. Fix: delete the trainer-level optimizer fields entirely and delegate to the
     model's own optimizer (single source of truth).
 
-33. **Logged loss is last-step-only, not averaged over `gen_steps` / `disc_steps`.**
-    [trainer.py:262-263](../src/snowgan/trainer.py#L262-L263) appends `gen_loss` and
-    `disc_loss` *after* the inner update loops, capturing only the final iteration. With
-    `gen_steps=3`, two of every three generator updates are invisible in the logged
-    history; the plotted curve misrepresents training. Root cause: loss recorded outside
-    the loop, overwriting on each iteration. Fix: accumulate inside the loops and append
-    the mean; additionally guard against `training_steps=0` so `gen_loss` / `disc_loss`
-    are always defined.
+33. ~~**Logged loss is last-step-only, not averaged over `gen_steps` / `disc_steps`.**~~
+    **Resolved 2026-05-09 (PR #13).** `train_step` now accumulates per-iteration
+    losses into lists and appends the mean (via `Trainer._mean_loss`). Empty-list
+    case returns 0.0 so the appended value is always a finite float, guarding
+    `training_steps=0`. `_update_adaptive_steps` consumes the mean too, which
+    stabilizes the EMA without changing the adaptive-steps decision logic.
 
 34. **Config JSON is rewritten non-atomically every training step.**
     [config.py:139](../src/snowgan/config.py#L139) opens the config file with `open(..., 'w')`
@@ -129,15 +120,30 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
     (`dict[(site, column, core), list[profile_idx]]`) to kill the linear rescan in
     `batch_merged`.
 
-11. **Honor `trained_pool / validation_pool / test_pool`.**
-    The config has slots; nothing populates them. Split the pair index 80/10/10 with a fixed
-    seed, persist the split, and gate training / validation metrics accordingly. This is a
-    precondition for any transfer-learning evaluation.
+11. ~~**Honor `trained_pool / validation_pool / test_pool`.**~~
+    **Resolved 2026-05-09 (PR #9).** `DataManager.derive_splits()` partitions
+    `pair_index` keys 80/10/10 at the group level (`(site, column, core)` tuples)
+    using `random.Random(config.seed)`. Trainer init populates the pools on first
+    run and persists them; idempotent on resume. Pools persist as `list[list]`
+    for JSON friendliness — consumers needing tuple-keyed `pair_index` lookups
+    must `tuple(...)` each entry on read. AvAI's Phase 4 evaluation reads
+    `config.test_pool` directly. Pools are not yet consumed by `batch_merged`;
+    that path couples to the `tf.data` rebuild (#10) and is intentionally
+    deferred.
 
 12. **Seed everything, log the seeds.**
     `random.seed`, `np.random.seed`, `tf.random.set_seed`, `os.environ["PYTHONHASHSEED"]`
     and `os.environ["TF_DETERMINISTIC_OPS"]="1"`. Persist the seed in the config snapshot.
     Without this, training runs are not replayable even across same-host restarts.
+
+    **Partially resolved 2026-05-09 (this PR).** `snowgan.utils.set_seed(seed)`
+    pins `random`, `numpy`, and `tf.random` to a deterministic state. main.py
+    calls it after configs are loaded, before any model construction, and
+    logs the seed. `config.seed` (default 42) was added in PR #9. Still
+    outstanding: full env-var coverage (`PYTHONHASHSEED`,
+    `TF_DETERMINISTIC_OPS`) only takes effect when set before
+    interpreter / TF startup — folds into UPGRADES #4 (bootstrap module
+    that sets env vars before any TF import).
 
 13. **Structured logging + TensorBoard / W&B.**
     Replace `print(...)` with the stdlib `logging` module (JSON handler for production, human
@@ -151,29 +157,28 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
     every M batches. This is the only way to know the model is improving — WGAN-GP loss is
     not monotonic.
 
-15. **Mixed precision: audit and fix.** Two independent breakages under the same flag:
-    - **(a) Output dtype.** `--mixed_precision True` enables `mixed_float16` globally, but
-      the generator's final `tanh` Conv3DTranspose computes in float16 and can
-      saturate/overflow. Force the output head to float32: `dtype='float32'` on the
-      `toRGB_curr` layer. Same for the critic's final `Dense(1)`.
-    - **(b) No loss scaling.** [utils.py:78-79](../src/snowgan/utils.py#L78-L79) sets
-      `set_global_policy("mixed_float16")` but never wraps the Adam optimizers in
-      `tf.keras.mixed_precision.LossScaleOptimizer`. fp16 gradients silently underflow to
-      zero below ~1e-7, especially early in fade-in at small α. Wrap both optimizers at
-      construction when the policy is fp16.
-    Both (a) and (b) must ship together; fixing only one leaves mixed precision broken.
+15. ~~**Mixed precision: audit and fix.**~~ **Resolved 2026-05-09 (PR #14).**
+    Both breakages closed: (a) generator's `toRGB_curr` and both critics'
+    `Dense(1)` pin to `dtype="float32"`, localizing the fp32 hotspot to where
+    fp16 saturates / overflows; (b) `Generator`, `Discriminator`, and
+    `disc_lowres` optimizers wrap in `tf.keras.mixed_precision.LossScaleOptimizer`
+    conditional on `keras.mixed_precision.global_policy().name == "mixed_float16"`.
+    Default-precision runs pay zero overhead.
 
 16. **Loss history storage.**
     Append-only JSON Lines (`loss.jsonl`: `{"step", "gen_loss", "disc_loss", "epoch", "batch"}`)
     instead of rewriting two `.txt` files on every save. Atomic append; easy to resume; easy
     to plot externally.
 
-17. **Checkpoint format: weights-only + sidecar.**
-    `keras.Model.save(*.keras)` serializes architecture + weights + custom layers. With the
-    `Lambda` in the generator's fade path, reload has already been known to break across
-    Keras versions. Prefer `model.save_weights(*.weights.h5)` plus a sidecar JSON describing
-    the architecture (the config you already have). Construct-then-load on reload; fail loud
-    if shapes don't match.
+17. ~~**Checkpoint format: weights-only + sidecar.**~~
+    **Resolved 2026-05-09 (PR #10).** Save format is now `*.weights.h5`; the
+    architecture sidecar is the existing per-model `*_config.json` (`config.dump()`
+    already contained every architecture knob). New `snowgan.checkpoint.resolve_weights_path`
+    prefers the new format and falls back to legacy `*.keras` if only that exists,
+    so existing trained checkpoints in `keras/snowgan/` keep loading; on first
+    save under new code the new format is written alongside. The bandaid
+    `try/except` in `Trainer.__init__` that previously swallowed shape mismatches
+    is gone — `load_weights` now raises loud per the spec.
 
 18. **Hugging Face Hub integration.**
     You already host the dataset there; mirror the code. Add an `hf push-model` command that
@@ -216,15 +221,12 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
     release on graceful shutdown; include the current PID and host in the lock payload
     so a stuck lock can be diagnosed.
 
-40. **Mixed-depth datasets trigger a model rebuild every batch.**
-    `_ensure_depth_alignment` (already cataloged under #2 for weight loss) has a second
-    failure mode: if the incoming manifest contains both depth-1 and depth-2 samples, the
-    trainer rebuilds models on every batch that flips depth. Each rebuild leaks TF graph
-    state and loses training momentum even if weights were preserved. Root cause: no
-    validation that the dataset has a consistent depth. Fix: `DataManager.__init__`
-    precomputes the depth of every pair and asserts homogeneity; refuse mixed-depth
-    datasets with a clear error. This is the companion fix to #2 — #2 addresses
-    *what* happens on rebuild, #40 prevents rebuilds from happening in steady-state.
+40. ~~**Mixed-depth datasets trigger a model rebuild every batch.**~~
+    **Resolved 2026-05-09 (PR #12).** Co-resolved with #2: `DataManager.PAIR_DEPTH`
+    is now constant, the per-batch rebuild is gone (replaced by a hard assertion
+    in `_ensure_depth_alignment`), and the latent `config.depth = ...` mutations
+    in `batch()` and `batch_merged()` are removed. Mixed-depth manifests would
+    now trip the assertion immediately rather than triggering silent rebuilds.
 
 ## Tier 🟡 — code health & velocity
 
@@ -261,11 +263,13 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
     `src/**/__pycache__/` and `src/**/*.egg-info/` patterns added to `.gitignore`. No
     tracked files needed removal (check ran clean at resolution time).
 
-25. **Document the modality-blending contract.**
-    The current shape convention `(B, depth, H, W, C)` with `depth=2` = `[profile, core]`
-    is encoded only by a line in `generate.py` (`view_names = ["profile", "core"]`). Make
-    it an explicit named tuple / enum (`Modality.PROFILE = 0`, `Modality.CORE = 1`) and use
-    it in dataset, generator, reporter.
+25. ~~**Document the modality-blending contract.**~~
+    **Resolved 2026-05-09 (PR #8).** `snowgan.modality.Modality` IntEnum
+    (`PROFILE=0`, `CORE=1`) is the single source of truth. Re-exported from the
+    package so AvAI can `from snowgan import Modality`. `merge_images` stacks
+    via explicit `Modality.{PROFILE,CORE}` lookups; `generate.py` derives view
+    filename suffixes from the enum. Output filename suffixes (`_profile.png`,
+    `_core.png`) preserved.
 
 26. **Replace hand-rolled batch-counter recovery with a persistent step counter.**
     [trainer.py:137-141](../src/snowgan/trainer.py#L137-L141) globs `synthetic_images/batch_*.png`
@@ -374,30 +378,43 @@ Proposed root-cause fix: a single `Checkpointer` module owns all persistence:
   committed state.
 - Resume reads the last committed snapshot only; no globbing the filesystem.
 
-Shipping this retires #8, #16, #17, #26, #34, #35, #36, #39 in one coherent change and
-eliminates a whole class of future bugs. Until it exists, the individual fixes are
-bandaids (in the sense of CLAUDE.md §2 — the symptom goes away, the design defect persists).
+Shipping this retires #8, #16, #26, #34, #35, #36, #39 in one coherent change and
+eliminates a whole class of future bugs. (#17 is already resolved independently —
+PR #10 — but the pattern still applies to the rest.) Until this exists, the
+individual fixes are bandaids (in the sense of CLAUDE.md §2 — the symptom goes
+away, the design defect persists).
 
 ## Suggested sequencing
 
-Week 1 (unblock training quality):
-- 🔴 #1 double-λ, #2 depth rebuild guard, #4 device env ordering, #32 stale optimizers,
-  #33 last-step loss, #40 single-depth assertion.
-- 🟠 #12 seeding, #15 mixed precision (both parts), #37 per-modality α.
+**Status as of 2026-05-09:** the AvAI Phase 4 unblocker cycle landed every Tier A
+and Tier B item from `/tmp/avai_phase_4_unblockers.md`. Resolved this cycle:
+#2, #3, #11, #15, #17, #25, #33, #40 (and #12 partial). What remains below is
+backlog beyond that cycle; the next gate is the fresh training run that
+produces the AvAI backbone.
 
-Week 2 (unblock transfer learning):
-- 🔴 #3 inference rewrite (frozen backbone + `fit`), #35 seen-profile persist order.
-- 🟠 #10 tf.data, #11 train/val/test split.
+Remaining 🔴 (correctness):
+- #4 device env ordering, #5 `--resolution` dead, #6 boolean CLI flags,
+  #7 `latent_dim` float, #34 non-atomic config writes (partial),
+  #35 `reset_seen_profiles` persist order, #36 batch-counter recovery.
 
-Week 3 (persistence subsystem — the cross-lens fix):
-- 🔴 #34 atomic config writes, #36 persistent batch counter.
-- 🟠 #8 atexit → Checkpointer, #17 weights-only, #39 save-dir lockfile.
-- 🟠 #38 sample cadence (hot-loop cleanup while inside Trainer).
-- 🟡 #20 tests + CI (regression tests for every 🔴 shipped so far).
+Remaining 🟠 (production):
+- #8 atexit → Checkpointer, #9 pydantic config, #10 tf.data pipeline,
+  #12 seed env-var portion (folds into #4), #13 structured logging,
+  #14 FID + KID metrics, #16 loss JSONL, #18 HF Hub push, #19 Docker pin,
+  #37 per-modality α, #38 generate cadence, #39 save_dir lockfile.
 
-Week 4 (production shell):
-- 🟠 #9 pydantic config, #13 structured logging, #14 FID, #18 HF Hub push, #19 Docker pin.
+Remaining 🟡 (code health):
+- #20 tests + CI, #21 mypy, #22 Trainer split, #23 `load_*` path mangling,
+  #26 batch counter (folds into #36), #29 dead imports remainder,
+  #30 pre-commit hooks, #41 LeakyReLU 0.25, #42 fade rename / refactor,
+  #43 matplotlib lifecycle, #44 drop `self.manifest` (partial), #45 port
+  rank-4 features (`diff_augment`, multi-scale disc) to rank-5.
 
-Week 5 (hardening):
-- 🟡 #21 mypy, #22 Trainer split (will be easier after Checkpointer exists),
-  #42 rename-or-rebuild fade, #43 matplotlib lifecycle, #44 drop manifest duplication.
+Remaining 🟢 (nice-to-have):
+- #28 submodule cleanup, #31 model card.
+
+A reasonable next slice once the fresh training run is underway:
+the persistence-subsystem cross-lens fix (#8 + #34 + #35 + #36 + #39 + #16,
+folded into the proposed `Checkpointer` above) is the highest-leverage piece
+remaining — it retires several 🔴 / 🟠 items in one coherent design rather
+than playing whack-a-mole on the symptoms.
