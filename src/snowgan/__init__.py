@@ -4,6 +4,7 @@ Exposes the main functions for generating and training diffusion models.
 """
 
 # Import functions/classes from internal modules
+from snowgan.modality import Modality
 from snowgan.models.discriminator import Discriminator, load_discriminator
 from snowgan.models.generator import Generator, load_generator
 
@@ -14,6 +15,7 @@ from snowgan.config import build
 
 # Define a clean public API
 __all__ = [
+    "Modality",
     "Generator",
     "load_generator",
     "Discriminator",

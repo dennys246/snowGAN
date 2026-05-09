@@ -5,6 +5,8 @@ from matplotlib import pyplot as plt
 from glob import glob
 from PIL import Image
 
+from snowgan.modality import Modality
+
 def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_prefix = 'synthetic', seed = None):
     """
     Generate synthetic images using the currently loaded generator and save
@@ -46,11 +48,11 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
         # If depth dimension present, save each slice separately
         if image_arr.ndim == 4:
             depth = image_arr.shape[0]
-            view_names = ["profile", "core"]
+            modality_by_index = {int(m): m.name.lower() for m in Modality}
             for d in range(depth):
-                suffix = view_names[d] if d < len(view_names) else f"view{d}"
+                suffix = modality_by_index.get(d, f"view{d}")
                 arr = image_arr[d]
-                if suffix == "core":
+                if suffix == Modality.CORE.name.lower():
                     arr = np.array(Image.fromarray(arr).resize((500, 300), Image.BICUBIC))
                 split_path = filepath.replace(".png", f"_{suffix}.png")
                 image = Image.fromarray(arr)
