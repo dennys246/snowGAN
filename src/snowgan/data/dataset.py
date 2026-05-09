@@ -4,6 +4,8 @@ from datasets import load_dataset
 import tensorflow as tf
 import numpy as np
 
+from snowgan.modality import Modality
+
 class DataManager:
 
     def __init__(self, config):
@@ -258,9 +260,13 @@ class DataManager:
         scaled_image = (tf.cast(image, tf.float32) / 127.5) - 1.0  
         return scaled_image
 
-    def merge_images(self, image_1, image_2):
+    def merge_images(self, core, profile):
+        """Stack core and profile along a new depth axis per ``Modality``.
 
-        # Resize first image to match spatial dims then stack along a new depth axis
-        image_1_resized = tf.image.resize(image_1, (image_2.shape[0], image_2.shape[1]))
-        merged_image = tf.stack([image_2, image_1_resized], axis=0)  # depth x H x W x C
-        return merged_image
+        ``Modality.PROFILE`` lands at depth index 0 and ``Modality.CORE`` at
+        depth index 1. Profile defines the spatial resolution; the core image
+        is resized to match before stacking.
+        """
+        core_resized = tf.image.resize(core, (profile.shape[0], profile.shape[1]))
+        images = {Modality.PROFILE: profile, Modality.CORE: core_resized}
+        return tf.stack([images[Modality.PROFILE], images[Modality.CORE]], axis=0)
