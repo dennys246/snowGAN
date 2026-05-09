@@ -23,14 +23,20 @@ class Trainer:
 
         print(f"Initializing trainer in cwd {os.getcwd()} with checkpoint {self.gen.config.checkpoint}...")
 
+        # Construct DataManager early — it derives the canonical pair_depth
+        # from config.modality, which is the single source of truth for how
+        # the trainer should size its models. The merged-mode depth is
+        # len(Modality)=2; single-modality is 1.
+        self.dataset = DataManager(self.gen.config)
+        target_depth = self.dataset.pair_depth
+
         # Sync model depth to the dataset's pair depth BEFORE loading weights.
-        # If the configured depth doesn't match what merge_images produces,
+        # If the configured depth doesn't match what the data path produces,
         # the models' input layers are the wrong shape and the train loop
         # used to silently rebuild them mid-batch (UPGRADES #2 + #40),
         # discarding any weights this init would later load. Rebuild here
         # while the models are still fresh and have no trained weights to
         # lose; from this point forward depth is invariant.
-        target_depth = DataManager.PAIR_DEPTH
         if int(getattr(self.gen.config, "depth", 1)) != target_depth:
             self.gen.config.depth = target_depth
             self.gen = type(self.gen)(self.gen.config)
@@ -82,10 +88,11 @@ class Trainer:
         self.disc.config.cleanup_milestone = self.cleanup_milestone
         self._save_interval = self.cleanup_milestone if self.cleanup_milestone > 0 else 1000
 
-        self.dataset = DataManager(self.gen.config)
         # Persist train/val/test split on first run so downstream consumers
         # (AvAI's evaluation against test_pool) see a stable group-level split
         # of (site, column, core) triples. Idempotent if already derived.
+        # (DataManager itself was constructed earlier so its pair_depth could
+        # drive the pre-weight-load depth sync above.)
         previously_split = self.gen.config.test_pool is not None
         self.dataset.derive_splits()
         if not previously_split:
@@ -97,7 +104,7 @@ class Trainer:
         self.gen.config.seen_profiles = self.dataset.seen_profiles
         self.disc.config.seen_profiles = self.dataset.seen_profiles
         # Keep discriminator channel/volume settings aligned with generator at startup
-        # (depth is already synced above to DataManager.PAIR_DEPTH).
+        # (depth is already synced above via dataset.pair_depth).
         self.disc.config.channels = self.gen.config.channels
         self.train_ind = self.gen.config.train_ind
         self.trained_data = []
@@ -403,21 +410,28 @@ class Trainer:
             self.disc.config.current_epoch = epoch
             batch = 1
 
-            batched_images = glob(f"{self.gen.config.save_dir}/synthetic_images/*batch*.png")
-            for batch_image in batched_images:
-                batch_number = int(batch_image.split('batch_')[1].split('_')[0])
-                if batch_number >= batch:
-                    batch = batch_number + 1
+            # Resume the batch counter from the highest existing snapshot dir
+            # so a mid-epoch crash doesn't restart at batch 1 and overwrite
+            # earlier snapshots. (UPGRADES #36 plans to persist this in
+            # config; until then, snapshot dirs are the durable source.)
+            for snapshot in glob(f"{self.gen.config.save_dir}/batch_*"):
+                if not os.path.isdir(snapshot):
+                    continue
+                snapshot_n = self._extract_batch_number(snapshot)
+                if snapshot_n is not None and snapshot_n >= batch:
+                    batch = snapshot_n + 1
 
             trainable_data = True
             while trainable_data:
-                # Load a new batch of subjects
+                # Load a new batch of subjects via the modality-aware
+                # dispatcher. config.modality determines whether this returns
+                # depth-1 single-modality samples or depth-2 merged stacks.
                 print(f"Grab a batch of data")
-                x = self.dataset.batch_merged(batch_size) 
+                x = self.dataset.next_batch(batch_size)
                 if x is None:
                     self.gen.config.train_ind = 0
-                    x = self.dataset.batch_merged(batch_size) 
-                    
+                    x = self.dataset.next_batch(batch_size)
+
                 print(f"Data batched")
                 if x is None:
                     print(f"Training Epoch Complete")
@@ -426,9 +440,10 @@ class Trainer:
 
                 # Sync discriminator settings with any update the dataset applied to generator
                 self.disc.config.channels = self.gen.config.channels
-                self.disc.config.depth = getattr(self.gen.config, "depth", 1)
 
-                # Ensure models match the incoming depth (e.g., stacked core/profile views)
+                # Ensure models match the incoming depth — should always pass
+                # since pair_depth is fixed at construction; mismatch indicates
+                # an upstream contract violation (UPGRADES #2 + #40).
                 self._ensure_depth_alignment(x.shape[1])
 
                 print(f"Training on batch {batch}...")
@@ -436,15 +451,10 @@ class Trainer:
                 self.train_step(x) # Train on batch of images
                 print(f'Epoch {epoch} | Batch {batch} | Generator loss: {round(float(self.loss["gen"][-1]), 3)} | Discrimintator loss: {round(float(self.loss["disc"][-1]), 3)} |')
 
-                
-                # Plot and generate synthetic images every 10 batches to reduce I/O overhead
+
+                # Plot training curves on a fixed batch cadence to avoid I/O storm
                 if batch % 10 == 0:
                     self.plot_history()
-
-                    if self.n_samples:
-                        backup = self._apply_ema_to_generator()
-                        _ = generate(self.gen, count = self.n_samples, seed_size = self.gen.config.latent_dim, save_dir = f"{self.save_dir}/synthetic_images/", filename_prefix = f'batch_{batch}_synthetic', seed = self._tracking_seed)
-                        self._restore_generator_weights(backup)
 
                 # FID-based best model checkpointing
                 if self.fid_interval > 0 and self.global_step % self.fid_interval == 0:
@@ -462,11 +472,30 @@ class Trainer:
                     self.save_model(f"{self.save_dir}/batch_{batch}/")
                     if self.cleanup_milestone > 0 and batch % self.cleanup_milestone == 0:
                         self._cleanup_saved_batches(100)
-                
+
                 batch += 1
             # Mark epoch completion for persistence
             self.gen.config.current_epoch = epoch + 1
             self.disc.config.current_epoch = epoch + 1
+
+            # Generate seeded preview samples at epoch end so progress is
+            # visible across either modality. Cadence and N are config-driven
+            # (sample_epoch_interval, n_samples). Skipped when the interval
+            # is 0 or n_samples is 0.
+            sample_interval = int(getattr(self.gen.config, "sample_epoch_interval", 1) or 0)
+            if sample_interval > 0 and self.n_samples and (epoch + 1) % sample_interval == 0:
+                backup = self._apply_ema_to_generator()
+                try:
+                    generate(
+                        self.gen,
+                        count=self.n_samples,
+                        seed_size=self.gen.config.latent_dim,
+                        save_dir=f"{self.save_dir}/synthetic_images/",
+                        filename_prefix=f"epoch_{epoch + 1}_synthetic",
+                        seed=self._tracking_seed,
+                    )
+                finally:
+                    self._restore_generator_weights(backup)
 
 
     def train_step(self, images, disc_steps = None, gen_steps = None):

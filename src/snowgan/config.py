@@ -113,7 +113,9 @@ config_template = {
             "grad_clip_norm": 0.0,
             "ada_target": 0.0,
             "adaptive_steps": False,
-            "seed": 42
+            "seed": 42,
+            "modality": "magnified_profile",
+            "sample_epoch_interval": 1
 }
 
 class build:
@@ -131,6 +133,13 @@ class build:
         config_json.setdefault("channels", 3)
         config_json.setdefault("depth", 1)
         config_json.setdefault("seed", 42)
+        config_json.setdefault("sample_epoch_interval", 1)
+        # Infer the modality mode from the existing depth on legacy configs.
+        # Pre-#6 (single-modality, depth=1) configs are profile training; post-#6
+        # configs (silent rebuild → depth=2) are merged. New configs default to
+        # "magnified_profile" via config_template.
+        if "modality" not in config_json:
+            config_json["modality"] = "merged" if int(config_json.get("depth", 1)) == 2 else "magnified_profile"
 
         self.configure(**config_json) # Build configuration
 
@@ -159,7 +168,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42, modality="magnified_profile", sample_epoch_interval=1):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -233,6 +242,8 @@ class build:
         self.ada_target = float(ada_target) if ada_target else 0.0
         self.adaptive_steps = bool(adaptive_steps)
         self.seed = int(seed) if seed is not None else 42
+        self.modality = str(modality) if modality else "magnified_profile"
+        self.sample_epoch_interval = int(sample_epoch_interval) if sample_epoch_interval is not None else 1
 
         default_checkpoint_filename = "generator.weights.h5" if self.architecture == "generator" else "discriminator.weights.h5"
         self.checkpoint = _normalize_checkpoint(self.save_dir, checkpoint, default_checkpoint_filename)
@@ -291,7 +302,9 @@ class build:
             "grad_clip_norm": self.grad_clip_norm,
             "ada_target": self.ada_target,
             "adaptive_steps": self.adaptive_steps,
-            "seed": self.seed
+            "seed": self.seed,
+            "modality": self.modality,
+            "sample_epoch_interval": self.sample_epoch_interval
         }
         return config
 
@@ -404,4 +417,8 @@ def configure_generic(config, args):
         config.ada_target = args.ada_target
     if getattr(args, "adaptive_steps", None) is not None:
         config.adaptive_steps = args.adaptive_steps
+    if getattr(args, "modality", None) is not None:
+        config.modality = args.modality
+    if getattr(args, "sample_epoch_interval", None) is not None:
+        config.sample_epoch_interval = args.sample_epoch_interval
     return config
