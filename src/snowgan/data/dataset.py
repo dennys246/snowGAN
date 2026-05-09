@@ -1,3 +1,4 @@
+import random
 from functools import cached_property
 
 from datasets import load_dataset
@@ -84,6 +85,46 @@ class DataManager:
     def reset_seen_profiles(self):
         self.seen_profiles.clear()
         self.config.seen_profiles = self.seen_profiles
+
+    def derive_splits(self, train_frac: float = 0.8, val_frac: float = 0.1):
+        """Populate ``config.trained_pool / validation_pool / test_pool`` with a
+        deterministic 80/10/10 split of ``pair_index`` keys.
+
+        Splits are taken at the group level (``(site, column, core)`` tuples) so
+        every profile of a given core lands in exactly one split — preventing
+        leakage where downstream consumers (AvAI's transfer-learning eval) would
+        otherwise see profiles of cores the GAN was trained on.
+
+        Idempotent: if all three pools are already populated on the config, this
+        method returns without rederiving. That preserves a previously chosen
+        split across resumes — a torn write that loses a pool will deterministically
+        regenerate the same split on next call (same seed, same pair_index keys).
+
+        Persistence is the caller's responsibility — this method only mutates
+        ``self.config`` in memory.
+
+        Pools are persisted as ``list[list]`` (JSON-friendly). Group keys round-
+        trip through JSON as lists; consumers that need tuple-keyed lookup against
+        ``pair_index`` should ``tuple(...)`` each entry on read.
+        """
+        if (
+            self.config.trained_pool is not None
+            and self.config.validation_pool is not None
+            and self.config.test_pool is not None
+        ):
+            return
+
+        keys = sorted(self.pair_index.keys())
+        rng = random.Random(int(getattr(self.config, "seed", 42)))
+        rng.shuffle(keys)
+
+        n = len(keys)
+        n_train = int(train_frac * n)
+        n_val = int(val_frac * n)
+
+        self.config.trained_pool = [list(k) for k in keys[:n_train]]
+        self.config.validation_pool = [list(k) for k in keys[n_train:n_train + n_val]]
+        self.config.test_pool = [list(k) for k in keys[n_train + n_val:]]
 
     def batch(self, batch_size, datatype = "magnified_profile", config = None):
         """
