@@ -138,6 +138,17 @@ def parse_args():
     parser.add_argument('--ada_target', type=float, default=None, help='ADA target disc accuracy on reals (e.g. 0.6, 0 to disable)')
     parser.add_argument('--adaptive_steps', action='store_true', default=None, help='Enable adaptive disc/gen training step ratio')
 
+    # Modality selection: which depth-axis arrangement the trainer feeds the
+    # GAN. "magnified_profile" / "core" / "profile" / "crystal_card" produce
+    # depth-1 batches of that single modality; "merged" stacks core+profile
+    # at depth=2 (the modality-blending experiment). Defaults to single
+    # modality so each model is focused on generative quality of one view.
+    parser.add_argument('--modality', type=str, default=None,
+                        choices=['magnified_profile', 'core', 'profile', 'crystal_card', 'merged'],
+                        help='Which modality the trainer feeds the GAN. Default: magnified_profile.')
+    parser.add_argument('--sample_epoch_interval', type=int, default=None,
+                        help='Generate seeded preview samples every N epochs (0 to disable). Default: 1.')
+
     # Parse the arguments
     return parser.parse_args()
 

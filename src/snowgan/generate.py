@@ -45,18 +45,25 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
         image_arr = (image_arr + 1.0) * 127.5
         image_arr = np.clip(image_arr, 0, 255).astype(np.uint8)
 
-        # If depth dimension present, save each slice separately
+        # If depth dimension present, save each slice separately. Single-
+        # modality runs (depth=1) collapse to one file with no per-modality
+        # suffix — there's only one modality represented, so the suffix
+        # would be redundant noise on the filesystem.
         if image_arr.ndim == 4:
             depth = image_arr.shape[0]
-            modality_by_index = {int(m): m.name.lower() for m in Modality}
-            for d in range(depth):
-                suffix = modality_by_index.get(d, f"view{d}")
-                arr = image_arr[d]
-                if suffix == Modality.CORE.name.lower():
-                    arr = np.array(Image.fromarray(arr).resize((500, 300), Image.BICUBIC))
-                split_path = filepath.replace(".png", f"_{suffix}.png")
-                image = Image.fromarray(arr)
-                save_image(image, split_path)
+            if depth == 1:
+                image = Image.fromarray(image_arr[0])
+                save_image(image, filepath)
+            else:
+                modality_by_index = {int(m): m.name.lower() for m in Modality}
+                for d in range(depth):
+                    suffix = modality_by_index.get(d, f"view{d}")
+                    arr = image_arr[d]
+                    if suffix == Modality.CORE.name.lower():
+                        arr = np.array(Image.fromarray(arr).resize((500, 300), Image.BICUBIC))
+                    split_path = filepath.replace(".png", f"_{suffix}.png")
+                    image = Image.fromarray(arr)
+                    save_image(image, split_path)
         else:
             # Convert to PIL image
             image = Image.fromarray(image_arr)

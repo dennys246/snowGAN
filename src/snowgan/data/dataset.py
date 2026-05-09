@@ -7,21 +7,38 @@ import numpy as np
 
 from snowgan.modality import Modality
 
+
+_SINGLE_MODALITIES = {"core", "profile", "magnified_profile", "crystal_card"}
+_MERGED_MODALITY = "merged"
+
+
+def pair_depth_for_modality(modality: str) -> int:
+    """Return the depth axis size that ``DataManager`` produces for a modality.
+
+    ``"merged"`` stacks the modalities defined in ``snowgan.modality.Modality``
+    (PROFILE + CORE today, depth=2). Any single-modality choice yields depth=1.
+    Used by the trainer to size models before loading weights, so the choice
+    is the single source of truth for the depth contract.
+    """
+    if modality == _MERGED_MODALITY:
+        return len(Modality)
+    if modality in _SINGLE_MODALITIES:
+        return 1
+    raise ValueError(
+        f"Unknown modality {modality!r}. Expected one of "
+        f"{sorted(_SINGLE_MODALITIES | {_MERGED_MODALITY})}."
+    )
+
+
 class DataManager:
-    # Stack depth produced by ``merge_images`` (PROFILE + CORE = 2 modalities).
-    # This is the single source of truth for the depth of merged batches; the
-    # trainer reads it at startup to size models and assert per-batch
-    # consistency. Changing the merge_images contract requires updating
-    # ``PAIR_DEPTH`` and adding a regression test.
-    PAIR_DEPTH: int = 2
 
     def __init__(self, config):
         """
         Initialize the DataManager with a configuration object.
-        
+
         Function arguments:
             config (Config) - Configuration object containing dataset parameters
-            
+
         This class handles loading the dataset and preparing batches of data for training.
         """
         dataset_name = getattr(config, "dataset", None) or "rmdig/rocky_mountain_snowpack"
@@ -38,6 +55,11 @@ class DataManager:
             'magnified_profile': 2,
             'crystal_card': 3
         }
+
+        # Stack depth this DataManager will produce for the trainer. Derived
+        # once at construction from config.modality so the trainer can read
+        # `dataset.pair_depth` as the canonical value when sizing its models.
+        self.pair_depth = pair_depth_for_modality(getattr(config, "modality", "magnified_profile"))
 
         # Track seen profiles across runs/epochs and keep in sync with config for persistence
         self.seen_profiles = set(getattr(self.config, "seen_profiles", []) or [])
@@ -131,6 +153,19 @@ class DataManager:
         self.config.trained_pool = [list(k) for k in keys[:n_train]]
         self.config.validation_pool = [list(k) for k in keys[n_train:n_train + n_val]]
         self.config.test_pool = [list(k) for k in keys[n_train + n_val:]]
+
+    def next_batch(self, batch_size, config=None):
+        """Dispatch to the right batch fetch path based on ``config.modality``.
+
+        Returns a numpy array of shape ``(B, pair_depth, H, W, C)``. Single
+        modalities produce depth=1; ``"merged"`` produces depth=2. The trainer
+        calls this exclusively so a modality change at config time is the only
+        thing that needs to switch behavior.
+        """
+        modality = getattr(self.config, "modality", "magnified_profile")
+        if modality == _MERGED_MODALITY:
+            return self.batch_merged(batch_size, config=config)
+        return self.batch(batch_size, datatype=modality, config=config)
 
     def batch(self, batch_size, datatype = "magnified_profile", config = None):
         """
