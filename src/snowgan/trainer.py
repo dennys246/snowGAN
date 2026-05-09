@@ -16,21 +16,32 @@ from snowgan.augment import augment as diff_augment
 class Trainer:
 
     def __init__(self, generator, discriminator):
-        
+
         # Generator and discriminator models
         self.gen = generator
+        self.disc = discriminator
 
         print(f"Initializing trainer in cwd {os.getcwd()} with checkpoint {self.gen.config.checkpoint}...")
-        
-        # If model not yet built
-        #if not self.gen.built:
-        #    self.gen.build(self.gen.config.resolution)
 
-        # Attempt to load weights if a checkpoint exists. load_weights raises
-        # on shape mismatch — we let it. Silently re-initializing on mismatch
-        # would mask the exact failure mode UPGRADES #17 cataloged: a config
-        # change drifts the architecture and the trained weights are quietly
-        # discarded. Fail loud instead so the misconfiguration surfaces.
+        # Sync model depth to the dataset's pair depth BEFORE loading weights.
+        # If the configured depth doesn't match what merge_images produces,
+        # the models' input layers are the wrong shape and the train loop
+        # used to silently rebuild them mid-batch (UPGRADES #2 + #40),
+        # discarding any weights this init would later load. Rebuild here
+        # while the models are still fresh and have no trained weights to
+        # lose; from this point forward depth is invariant.
+        target_depth = DataManager.PAIR_DEPTH
+        if int(getattr(self.gen.config, "depth", 1)) != target_depth:
+            self.gen.config.depth = target_depth
+            self.gen = type(self.gen)(self.gen.config)
+        if int(getattr(self.disc.config, "depth", 1)) != target_depth:
+            self.disc.config.depth = target_depth
+            self.disc = type(self.disc)(self.disc.config)
+        self._built_depth = target_depth
+
+        # Now load weights — model shapes are aligned with the dataset's
+        # pair depth, so load_weights raises on a real shape mismatch
+        # rather than masking it with a silent rebuild.
         gen_weights_path = resolve_weights_path(self.gen.config.checkpoint)
         if gen_weights_path is not None:
             self.gen.model.load_weights(gen_weights_path)
@@ -43,13 +54,6 @@ class Trainer:
                     print(f"Generator fade endpoints loaded from {fade_weights_path}")
         else:
             print("Generator saved weights not found, new model initialized")
-
-
-        self.disc = discriminator
-
-        # If model not yet built
-        #if not self.disc.built:
-        #    self.disc.build(self.disc.config.resolution)
 
         disc_weights_path = resolve_weights_path(self.disc.config.checkpoint)
         if disc_weights_path is not None:
@@ -93,10 +97,8 @@ class Trainer:
         self.gen.config.seen_profiles = self.dataset.seen_profiles
         self.disc.config.seen_profiles = self.dataset.seen_profiles
         # Keep discriminator channel/volume settings aligned with generator at startup
+        # (depth is already synced above to DataManager.PAIR_DEPTH).
         self.disc.config.channels = self.gen.config.channels
-        self.disc.config.depth = getattr(self.gen.config, "depth", 1)
-        # Track last built depth to avoid redundant rebuilds
-        self._built_depth = getattr(self.gen.config, "depth", 1)
         self.train_ind = self.gen.config.train_ind
         self.trained_data = []
 
@@ -603,24 +605,27 @@ class Trainer:
             self.fade_complete = True
 
     def _ensure_depth_alignment(self, depth):
-        """Rebuild models if batch depth differs from configured depth."""
-        desired = int(depth) if depth is not None else None
-        if desired is None:
+        """Hard-assert batch depth matches the depth the trainer was built at.
+
+        The previous behavior was to silently rebuild gen/disc on mismatch,
+        which discarded any trained weights (UPGRADES #2) and could fire
+        on every batch under a mixed-depth manifest (UPGRADES #40). The
+        rebuild has moved to ``__init__`` (one-time, before weight load);
+        from this point on, the dataset's ``DataManager.PAIR_DEPTH`` is
+        the single source of truth and any per-batch deviation indicates
+        an upstream contract violation we should surface immediately.
+        """
+        if depth is None:
             return
-        if desired == self._built_depth:
-            return
-
-        current_gen = getattr(self.gen.config, "depth", None)
-        current_disc = getattr(self.disc.config, "depth", None)
-
-        print(f"Rebuilding models for depth {desired} (was gen={current_gen}, disc={current_disc})")
-        self.gen.config.depth = desired
-        self.disc.config.depth = desired
-
-        # Rebuild models with the new depth
-        self.gen = type(self.gen)(self.gen.config)
-        self.disc = type(self.disc)(self.disc.config)
-        self._built_depth = desired
+        desired = int(depth)
+        if desired != self._built_depth:
+            raise RuntimeError(
+                f"Batch depth {desired} does not match the trainer's built "
+                f"depth {self._built_depth}. The dataset/model depth contract "
+                f"was violated upstream of train_step — check that "
+                f"DataManager.PAIR_DEPTH matches the data path's actual "
+                f"output depth."
+            )
 
     def save_model(self, path = None):
         """

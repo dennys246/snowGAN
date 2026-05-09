@@ -8,6 +8,12 @@ import numpy as np
 from snowgan.modality import Modality
 
 class DataManager:
+    # Stack depth produced by ``merge_images`` (PROFILE + CORE = 2 modalities).
+    # This is the single source of truth for the depth of merged batches; the
+    # trainer reads it at startup to size models and assert per-batch
+    # consistency. Changing the merge_images contract requires updating
+    # ``PAIR_DEPTH`` and adding a regression test.
+    PAIR_DEPTH: int = 2
 
     def __init__(self, config):
         """
@@ -165,8 +171,6 @@ class DataManager:
 
                 # Add a depth dimension for single-view samples
                 scaled_image = tf.expand_dims(scaled_image, axis=0)
-                if hasattr(self.config, "depth"):
-                    self.config.depth = int(scaled_image.shape[0])
 
                 batch.append(scaled_image)
                 print(f"Image {self.config.train_ind} added")
@@ -268,12 +272,6 @@ class DataManager:
                     continue
 
                 merged_image = self.merge_images(core_image, profile_image)
-
-                # Track stacked depth (views)
-                if hasattr(self.config, "depth"):
-                    depth = merged_image.shape[0]
-                    if depth is not None:
-                        self.config.depth = int(depth)
 
                 batch.append(merged_image)
                 print(f"Image add with core {self.config.train_ind} and profile {profile_ind} from segment {self.dataset['train'][profile_ind]['segment']}")
