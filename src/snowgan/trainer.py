@@ -496,7 +496,11 @@ class Trainer:
         # Current augmentation probability (ADA adjusts this dynamically)
         aug_p = self.augment_p
 
-        # Train the discriminator N times
+        # Train the discriminator N times. Accumulate per-iteration losses
+        # so the recorded train_step datapoint reflects the mean across all
+        # inner updates rather than only the final iteration's value
+        # (UPGRADES #33). Empty-list guard handles training_steps=0.
+        disc_losses: list[float] = []
         real_scores = None
         for _ in range(self.disc.config.training_steps):
             # Generate synthetic images outside the tape — no need to track generator ops for disc training
@@ -543,10 +547,14 @@ class Trainer:
                 disc_loss = disc_loss + 0.5 * disc_loss_lr  # For logging
                 del lr_tape, lowres_grads, real_lowres, fake_lowres
 
+            disc_losses.append(float(disc_loss))
+
             # Free augmented copies before gen training
             del disc_real, disc_fake
 
-        # Train the generator M times
+        # Train the generator M times. Same accumulation pattern as the
+        # discriminator loop above (UPGRADES #33).
+        gen_losses: list[float] = []
         for _ in range(self.gen.config.training_steps):
             # Generate random noise to pass into the generator
             noise = tf.random.normal([batch_size, self.gen.config.latent_dim])
@@ -575,9 +583,15 @@ class Trainer:
             # Apply the gradients and update trainable parameters (w, b, etc.)
             self.gen.optimizer.apply_gradients(zip(gen_gradients, var_list))
 
-        # Record loss of models to their histories
-        self.loss['gen'].append(float(gen_loss))
-        self.loss['disc'].append(float(disc_loss))
+            gen_losses.append(float(gen_loss))
+
+        # Record mean loss across the inner update loops. Using means makes
+        # the curve faithful to all training_steps iterations and stabilizes
+        # the EMA in _update_adaptive_steps below.
+        mean_disc_loss = self._mean_loss(disc_losses)
+        mean_gen_loss = self._mean_loss(gen_losses)
+        self.loss['gen'].append(mean_gen_loss)
+        self.loss['disc'].append(mean_disc_loss)
         # Increment global step after a full train step
         self.global_step += 1
         self._update_fade_completion()
@@ -588,7 +602,7 @@ class Trainer:
         # Post-step improvements
         self._update_ema()
         self._update_learning_rates()
-        self._update_adaptive_steps(disc_loss, gen_loss)
+        self._update_adaptive_steps(mean_disc_loss, mean_gen_loss)
         if real_scores is not None:
             self._update_ada(real_scores)
 
@@ -706,6 +720,20 @@ class Trainer:
         plt.xlabel("Epochs")
         plt.savefig(os.path.join(self.save_dir, 'history.png'))
         plt.close()
+
+    @staticmethod
+    def _mean_loss(losses: list[float]) -> float:
+        """Mean of a list of per-iteration losses, or 0.0 if empty.
+
+        UPGRADES #33: train_step records one curve point per call. Each
+        point should reflect the mean across all inner update iterations
+        rather than only the final iteration's value, so curves stay
+        faithful when training_steps > 1. Empty-list case (training_steps=0)
+        returns 0.0 so the appended value is always defined.
+        """
+        if not losses:
+            return 0.0
+        return sum(losses) / len(losses)
 
     @staticmethod
     def _extract_batch_number(path: str):
