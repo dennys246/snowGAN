@@ -15,7 +15,6 @@ Technical reference for snowGAN's model architectures, training pipeline, and in
 - [Data Pipeline](#data-pipeline)
 - [Configuration System](#configuration-system)
 - [Checkpoint & Persistence](#checkpoint--persistence)
-- [Inference Mode](#inference-mode)
 
 ---
 
@@ -416,39 +415,6 @@ batch_{N}_synthetic_{1..n_samples}.png
 ```
 
 Cleanup trims to the 7 most recent images per batch for non-milestone batches.
-
----
-
-## Inference Mode
-
-**File:** `src/snowgan/inference.py`
-
-Inference mode repurposes the trained discriminator's learned features for classification tasks.
-
-### Architecture
-
-Takes the discriminator's penultimate layer (Flatten output) and adds two classification heads:
-
-```
-Discriminator features (Flatten)
-    ├──→ Dense(21, softmax) → avalanches_spotted  (0-20 count)
-    └──→ Dense(4, softmax)  → wind_loading         (0-3 category)
-```
-
-### Usage
-
-```bash
-snowgan --mode infer --infer_samples 1000
-```
-
-This:
-1. Forces CPU execution (no GPU required)
-2. Loads the discriminator checkpoint
-3. Builds inference heads on top of discriminator features
-4. Evaluates on labeled samples from the dataset
-5. Plots loss/accuracy metrics to `inference_metrics.png`
-
-The inference heads are randomly initialized — they evaluate how useful the discriminator's learned features are for downstream tasks, not a pre-trained classifier.
 
 ---
 
