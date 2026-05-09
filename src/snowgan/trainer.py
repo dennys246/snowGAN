@@ -719,23 +719,6 @@ class Trainer:
             self._restore_generator_weights(backup)
         print(f"Models saved in {path}...")
 
-    def load_model(self, path = None):
-        """
-        Load the generator and discriminator into the snowGAN object from the path passed in
-        
-        Function arguments:
-            path (str) - Folder containing the generator and discriminator .keras files
-        """
-        # Update path if none passed in
-        if path == None:
-            path = self.save_dir
-
-        # Load generator and discriminator .keras files
-        self.model.gen.model = tf.keras.models.load_model(f"{path}keras/generator.keras")
-        self.model.disc.model = tf.keras.models.load_model(f"{path}keras/discriminator.keras")
-        print(f"Models loaded from {path}...")
-
-
     def plot_history(self):
         # Check if save folder exists yet
         if os.path.exists(self.save_dir) == False:

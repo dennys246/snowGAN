@@ -1,10 +1,36 @@
 import argparse
 import os
+import random
 from tensorflow.keras.mixed_precision import set_global_policy
+import numpy as np
 import tensorflow as tf
 from pathlib import Path
 
 from snowgan.config import build as configuration
+
+
+def set_seed(seed: int) -> None:
+    """Pin RNG state across Python, NumPy, and TensorFlow for reproducibility.
+
+    UPGRADES #12: training runs were not replayable across same-host
+    restarts because no seed was applied to any RNG. This function fixes
+    the library-level seeding (``random``, ``numpy``, ``tf.random``) and
+    sets ``PYTHONHASHSEED`` / ``TF_DETERMINISTIC_OPS`` for completeness.
+
+    The two env vars only take *full* effect when set before the Python
+    interpreter and TensorFlow are started — Python's hash randomization
+    is initialized at interpreter startup, and TF caches the determinism
+    flag at import time. Setting them inside an already-running process
+    is best-effort; UPGRADES #4 tracks the bootstrap module that would
+    set these before any TF import.
+    """
+    seed = int(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    os.environ["TF_DETERMINISTIC_OPS"] = "1"
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+
 
 def upscale_layer(layer, scale=2, method="nearest"):
     """ 
