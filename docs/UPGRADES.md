@@ -357,6 +357,19 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
 31. **Model card + dataset card cross-links.** Describe licensing, intended-use, limitations,
     evaluation results, bias considerations.
 
+41. **Release multiple model sizes for transfer-learning consumers.**
+    The depth-axis architecture's compute scales with `resolution²·depth`, and the
+    backbone-resolution choice is a one-time commitment per release (AvAI builds
+    classification heads on top of a frozen Conv3D backbone whose feature dim is
+    `depth·H·W·filter_counts[-1]`). A consumer running on a 16-GB card cannot
+    transfer from a 1024×1024 backbone but can from 512×512 or 256×256. Plan:
+    after the primary AvAI run-1 (1024×1024 paired-modality, this cycle), train
+    smaller depth=2 backbones at 512×512 and 256×256 and publish them with
+    matching `discriminator_config.json` + `discriminator.weights.h5` so AvAI's
+    `load_backbone` resolves whichever fits the deploy target. Dependency
+    note: filter_counts length must shrink by one per halving of resolution
+    (16 × 2^(N+1) coupling, see [docs/architecture.md](architecture.md)).
+
 ---
 
 ## Cross-lens observation — unify persistence as a single subsystem
