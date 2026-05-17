@@ -1,9 +1,21 @@
-import os, atexit, re, shutil, math
+import os, atexit, re, shutil, math, gc
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
 from matplotlib import pyplot as plt
 from glob import glob
+
+
+def _process_rss_mb() -> float:
+    """Resident-set size of the current process in MiB. Linux /proc only."""
+    try:
+        with open("/proc/self/status", "r") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024.0
+    except OSError:
+        pass
+    return 0.0
 
 from snowgan.checkpoint import resolve_weights_path, to_weights_path
 from snowgan.losses import compute_gradient_penalty
@@ -327,11 +339,20 @@ class Trainer:
             # Load inception model on demand — do NOT cache in VRAM permanently
             inception_model = InceptionV3(include_top=False, pooling='avg', input_shape=(299, 299, 3))
 
+            def _flatten_depth(x):
+                # Inception expects 4-D (N, H, W, 3); collapse the depth axis
+                # into batch so each modality slice scores independently.
+                if len(x.shape) == 5:
+                    s = tf.shape(x)
+                    x = tf.reshape(x, [s[0] * s[1], s[2], s[3], s[4]])
+                return x
+
             def get_features_batched(images, batch_size=4):
                 """Extract features in small batches to avoid OOM at high resolutions."""
                 all_features = []
                 for i in range(0, len(images), batch_size):
                     chunk = images[i:i + batch_size]
+                    chunk = _flatten_depth(chunk)
                     chunk = tf.image.resize(chunk, (299, 299))
                     chunk = (chunk + 1.0) * 127.5
                     chunk = preprocess_input(chunk)
@@ -348,6 +369,7 @@ class Trainer:
                 n = min(gen_batch, num_samples - i)
                 noise = tf.random.normal([n, self.gen.config.latent_dim])
                 chunk = self.gen.model(noise, training=False)
+                chunk = _flatten_depth(chunk)
                 chunk = tf.image.resize(chunk, (299, 299))
                 chunk = (chunk + 1.0) * 127.5
                 chunk = preprocess_input(chunk)
@@ -449,7 +471,16 @@ class Trainer:
                 print(f"Training on batch {batch}...")
 
                 self.train_step(x) # Train on batch of images
-                print(f'Epoch {epoch} | Batch {batch} | Generator loss: {round(float(self.loss["gen"][-1]), 3)} | Discrimintator loss: {round(float(self.loss["disc"][-1]), 3)} |')
+                # Drop the input batch reference before printing RSS so the
+                # number reflects steady-state memory between batches.
+                del x
+                # Force a GC sweep to break any reference cycles closures may
+                # create. Cheap (microseconds) and isolates "creeping" leaks
+                # caused by cycles vs. true unfreed allocations.
+                if batch % 10 == 0:
+                    gc.collect()
+                rss_mb = _process_rss_mb()
+                print(f'Epoch {epoch} | Batch {batch} | Generator loss: {round(float(self.loss["gen"][-1]), 3)} | Discrimintator loss: {round(float(self.loss["disc"][-1]), 3)} | RSS: {rss_mb:.0f} MiB')
 
 
                 # Plot training curves on a fixed batch cadence to avoid I/O storm
@@ -472,6 +503,27 @@ class Trainer:
                     self.save_model(f"{self.save_dir}/batch_{batch}/")
                     if self.cleanup_milestone > 0 and batch % self.cleanup_milestone == 0:
                         self._cleanup_saved_batches(100)
+
+                # Per-batch seeded preview emission. Off by default
+                # (sample_batch_interval=0); when enabled it mirrors the
+                # epoch-end block below so a run that never closes an
+                # epoch still leaves a visible trail in synthetic_images/.
+                # Filename prefix matches the historical naming so
+                # _cleanup_saved_batches' glob still trims them.
+                batch_sample_interval = int(getattr(self.gen.config, "sample_batch_interval", 0) or 0)
+                if self._should_emit_batch_sample(batch, batch_sample_interval, self.n_samples):
+                    backup = self._apply_ema_to_generator()
+                    try:
+                        generate(
+                            self.gen,
+                            count=self.n_samples,
+                            seed_size=self.gen.config.latent_dim,
+                            save_dir=f"{self.save_dir}/synthetic_images/",
+                            filename_prefix=f"batch_{batch}_synthetic",
+                            seed=self._tracking_seed,
+                        )
+                    finally:
+                        self._restore_generator_weights(backup)
 
                 batch += 1
             # Mark epoch completion for persistence
@@ -563,8 +615,16 @@ class Trainer:
 
             # Multi-scale discriminator in its own tape (separate VRAM peak)
             if self.disc_lowres is not None:
-                real_lowres = tf.image.resize(images, (256, 256))
-                fake_lowres = tf.image.resize(synthetic_images, (256, 256))
+                # disc_lowres takes 4-D (N, 256, 256, 3); collapse the
+                # depth axis into the batch so each modality slice scores
+                # independently against the low-res critic.
+                def _to_lowres(x):
+                    if len(x.shape) == 5:
+                        s = tf.shape(x)
+                        x = tf.reshape(x, [s[0] * s[1], s[2], s[3], s[4]])
+                    return tf.image.resize(x, (256, 256))
+                real_lowres = _to_lowres(images)
+                fake_lowres = _to_lowres(synthetic_images)
                 with tf.GradientTape() as lr_tape:
                     real_out_lr = self.disc_lowres(real_lowres, training=True)
                     fake_out_lr = self.disc_lowres(fake_lowres, training=True)
@@ -578,8 +638,8 @@ class Trainer:
 
             disc_losses.append(float(disc_loss))
 
-            # Free augmented copies before gen training
-            del disc_real, disc_fake
+            # Free augmented copies and per-iter tensors before next iter / gen training
+            del disc_real, disc_fake, output, synthetic_output, gp, disc_loss, synthetic_images
 
         # Train the generator M times. Same accumulation pattern as the
         # discriminator loop above (UPGRADES #33).
@@ -613,6 +673,8 @@ class Trainer:
             self.gen.optimizer.apply_gradients(zip(gen_gradients, var_list))
 
             gen_losses.append(float(gen_loss))
+            # Drop per-iter tensors so refs don't pile up across the inner loop.
+            del tape, gen_gradients, var_list, synthetic_images, synthetic_output, gen_loss, noise
 
         # Record mean loss across the inner update loops. Using means makes
         # the curve faithful to all training_steps iterations and stabilizes
@@ -723,15 +785,38 @@ class Trainer:
         # Check if save folder exists yet
         if os.path.exists(self.save_dir) == False:
             os.makedirs(self.save_dir, exist_ok = True)
-        # Plot the generator and discriminator loss history
-        plt.plot([float(v) for v in self.loss['gen']], label = 'Generator loss')
-        plt.plot([float(v) for v in self.loss['disc']], label = 'Discriminator loss')
-        plt.title("GAN History")
-        plt.legend()
-        plt.ylabel("Loss")
-        plt.xlabel("Epochs")
-        plt.savefig(os.path.join(self.save_dir, 'history.png'))
-        plt.close()
+        # Use an explicit Figure so close() releases everything; pyplot global
+        # state has known leaks across many short-lived figures, which matter
+        # here because plot_history runs every 10 batches over 400k+ points.
+        # The loss lists are already plain Python floats (from load_history /
+        # _mean_loss), so passing them directly avoids a 400k-element copy.
+        fig, ax = plt.subplots()
+        try:
+            ax.plot(self.loss['gen'], label='Generator loss')
+            ax.plot(self.loss['disc'], label='Discriminator loss')
+            ax.set_title("GAN History")
+            ax.set_xlabel("Epochs")
+            ax.set_ylabel("Loss")
+            ax.legend()
+            fig.savefig(os.path.join(self.save_dir, 'history.png'))
+        finally:
+            plt.close(fig)
+
+    @staticmethod
+    def _should_emit_batch_sample(batch: int, interval: int, n_samples: int) -> bool:
+        """Predicate for the per-batch seeded-preview emission.
+
+        Pulled out of the train loop so it has a single, testable definition.
+        Off when interval<=0 or n_samples<=0; otherwise fires on multiples of
+        ``interval``. ``batch`` is 1-indexed in the train loop, so batch=1 with
+        interval=1 emits on the first batch (matches the existing checkpoint
+        cadence semantics).
+        """
+        if interval <= 0:
+            return False
+        if not n_samples or n_samples <= 0:
+            return False
+        return batch % interval == 0
 
     @staticmethod
     def _mean_loss(losses: list[float]) -> float:
