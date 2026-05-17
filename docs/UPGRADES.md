@@ -202,15 +202,17 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
     interpolation. Alternative: document explicitly that coupled α is intentional and
     justify it; otherwise default to independent.
 
-38. **`generate()` runs every batch during training.**
-    [trainer.py:173-174](../src/snowgan/trainer.py#L173-L174) calls `generate(...)`
-    unconditionally in the inner loop, writing `n_samples * depth` PNGs per `train_step`
-    plus a generator forward pass. This reads as debug tracing left in the hot loop —
-    hundreds of filesystem writes per second at the configured `n_samples=10`, `depth=2`.
-    Root cause: no cadence control; the sample step shares the training step. Fix: add a
-    `--sample_interval` (default = `cleanup_milestone`) and gate sample generation behind
-    it. Also move the filesystem write off the training thread (async queue / dedicated
-    reporter).
+38. ~~**`generate()` runs every batch during training.**~~
+    **Resolved 2026-05-10.** Originally the inner loop wrote `n_samples * depth` PNGs
+    per `train_step` (debug tracing in the hot loop). PR #15 (May 9) removed the
+    unconditional call entirely and gated emission on `sample_epoch_interval` at
+    epoch boundaries — but at 1024×1024 an epoch never closes for typical mid-run
+    crashes, so visibility went to zero. The follow-up adds a `sample_batch_interval`
+    config field (default `0` = off; CLI: `--sample_batch_interval`) that re-enables
+    per-batch emission at an explicit cadence, mirroring the EMA-wrapped epoch-end
+    block. The async-queue / off-thread write idea is still open if I/O ever becomes
+    a measured bottleneck, but at typical cadences (≥100 batches) it isn't worth
+    the complexity.
 
 39. **No lock on `save_dir` → concurrent runs silently corrupt each other.**
     Two `snowgan --mode train --save_dir ./models` processes will race on
@@ -401,7 +403,7 @@ Remaining 🟠 (production):
 - #8 atexit → Checkpointer, #9 pydantic config, #10 tf.data pipeline,
   #12 seed env-var portion (folds into #4), #13 structured logging,
   #14 FID + KID metrics, #16 loss JSONL, #18 HF Hub push, #19 Docker pin,
-  #37 per-modality α, #38 generate cadence, #39 save_dir lockfile.
+  #37 per-modality α, #39 save_dir lockfile.
 
 Remaining 🟡 (code health):
 - #20 tests + CI, #21 mypy, #22 Trainer split, #23 `load_*` path mangling,
