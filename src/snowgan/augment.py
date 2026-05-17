@@ -15,8 +15,13 @@ def augment(images, p=0.5):
     """
     Apply random differentiable augmentations to a batch of images.
 
+    Accepts ``(B, H, W, C)`` (legacy 2-D path) or ``(B, D, H, W, C)`` (depth-axis
+    modality contract). For 5-D inputs, the same flip / cutout decision is
+    applied across the depth axis so that paired modalities in merged mode stay
+    coherent.
+
     Args:
-        images: (B, H, W, C) tensor in [-1, 1] range
+        images: image tensor in [-1, 1] range
         p: probability of applying each augmentation
 
     Returns:
@@ -31,7 +36,17 @@ def augment(images, p=0.5):
 
 def _random_flip(images, p):
     if tf.random.uniform([]) < p:
-        images = tf.image.random_flip_left_right(images)
+        if len(images.shape) == 5:
+            # tf.image.random_flip_left_right only handles 3-D / 4-D. Roll our
+            # own 5-D flip with one decision per batch element broadcast across
+            # the depth axis so paired modalities flip together.
+            batch = tf.shape(images)[0]
+            flip = tf.random.uniform([batch]) > 0.5
+            flip = tf.reshape(flip, [batch, 1, 1, 1, 1])
+            flipped = tf.reverse(images, axis=[3])  # width axis
+            images = tf.where(flip, flipped, images)
+        else:
+            images = tf.image.random_flip_left_right(images)
     return images
 
 
@@ -56,28 +71,42 @@ def _random_saturation(images, p, lower=0.8, upper=1.2):
 
 
 def _random_cutout(images, p, ratio=0.25):
-    """Random rectangular cutout filled with zeros."""
+    """Random rectangular cutout filled with zeros.
+
+    Supports ``(B, H, W, C)`` and ``(B, D, H, W, C)``; the same cutout
+    rectangle is applied to every depth slice of a given batch element.
+    """
     if tf.random.uniform([]) < p:
+        rank = len(images.shape)
         shape = tf.shape(images)
         batch_size = shape[0]
-        h = shape[1]
-        w = shape[2]
+        if rank == 5:
+            h = shape[2]
+            w = shape[3]
+            mask_shape_y = [1, 1, h, 1, 1]
+            mask_shape_x = [1, 1, 1, w, 1]
+            cy_shape = [batch_size, 1, 1, 1, 1]
+            cx_shape = [batch_size, 1, 1, 1, 1]
+        else:
+            h = shape[1]
+            w = shape[2]
+            mask_shape_y = [1, h, 1, 1]
+            mask_shape_x = [1, 1, w, 1]
+            cy_shape = [batch_size, 1, 1, 1]
+            cx_shape = [batch_size, 1, 1, 1]
+
         cut_h = tf.cast(tf.cast(h, tf.float32) * ratio, tf.int32)
         cut_w = tf.cast(tf.cast(w, tf.float32) * ratio, tf.int32)
 
-        # Random top-left corner for each image in the batch
-        cy = tf.random.uniform([batch_size, 1, 1, 1], 0, tf.cast(h, tf.float32), dtype=tf.float32)
-        cx = tf.random.uniform([batch_size, 1, 1, 1], 0, tf.cast(w, tf.float32), dtype=tf.float32)
+        cy = tf.random.uniform(cy_shape, 0, tf.cast(h, tf.float32), dtype=tf.float32)
+        cx = tf.random.uniform(cx_shape, 0, tf.cast(w, tf.float32), dtype=tf.float32)
 
-        # Create coordinate grids
-        y_range = tf.cast(tf.reshape(tf.range(h), [1, h, 1, 1]), tf.float32)
-        x_range = tf.cast(tf.reshape(tf.range(w), [1, 1, w, 1]), tf.float32)
+        y_range = tf.cast(tf.reshape(tf.range(h), mask_shape_y), tf.float32)
+        x_range = tf.cast(tf.reshape(tf.range(w), mask_shape_x), tf.float32)
 
-        # Mask: 0 inside cutout, 1 outside
         mask_y = tf.cast((y_range >= cy) & (y_range < cy + tf.cast(cut_h, tf.float32)), tf.float32)
         mask_x = tf.cast((x_range >= cx) & (x_range < cx + tf.cast(cut_w, tf.float32)), tf.float32)
         mask = 1.0 - mask_y * mask_x
 
-        # Cast mask to match image dtype for mixed precision compatibility
         images = images * tf.cast(mask, images.dtype)
     return images
