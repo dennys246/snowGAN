@@ -105,13 +105,7 @@ class Trainer:
         # of (site, column, core) triples. Idempotent if already derived.
         # (DataManager itself was constructed earlier so its pair_depth could
         # drive the pre-weight-load depth sync above.)
-        previously_split = self.gen.config.test_pool is not None
-        self.dataset.derive_splits()
-        if not previously_split:
-            try:
-                self.gen.config.save_config()
-            except Exception as e:
-                print(f"Warning: failed to persist derived data splits: {e}")
+        self._persist_initial_splits()
         # Keep seen profile tracking persistent across configs
         self.gen.config.seen_profiles = self.dataset.seen_profiles
         self.disc.config.seen_profiles = self.dataset.seen_profiles
@@ -910,6 +904,36 @@ class Trainer:
                 self.gen.config.config_filepath = gen_orig
             if disc_orig is not None:
                 self.disc.config.config_filepath = disc_orig
+
+    def _persist_initial_splits(self):
+        """Derive train/val/test splits and persist them to both configs.
+
+        ``DataManager.derive_splits`` only mutates the config it was constructed
+        with (``self.gen.config``). AvAI's evaluation reads
+        ``discriminator_config.json`` for the test pool, so the three pools must
+        be mirrored onto ``self.disc.config`` explicitly — otherwise the
+        periodic save in ``_sync_fade_progress`` keeps dumping the still-null
+        fields on the discriminator side and Phase 4b stays blocked despite the
+        splits being derived correctly upstream.
+
+        ``previously_split`` requires *both* configs to already have a populated
+        ``test_pool``; if either side is null (the torn state caused by the
+        original PR #9 bug), the immediate save fires to repair the file.
+        """
+        previously_split = (
+            self.gen.config.test_pool is not None
+            and self.disc.config.test_pool is not None
+        )
+        self.dataset.derive_splits()
+        self.disc.config.trained_pool = self.gen.config.trained_pool
+        self.disc.config.validation_pool = self.gen.config.validation_pool
+        self.disc.config.test_pool = self.gen.config.test_pool
+        if not previously_split:
+            try:
+                self.gen.config.save_config()
+                self.disc.config.save_config()
+            except Exception as e:
+                print(f"Warning: failed to persist derived data splits: {e}")
 
     def _sync_fade_progress(self, persist=True):
         """
