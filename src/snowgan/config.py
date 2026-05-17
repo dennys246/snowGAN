@@ -115,7 +115,8 @@ config_template = {
             "adaptive_steps": False,
             "seed": 42,
             "modality": "magnified_profile",
-            "sample_epoch_interval": 1
+            "sample_epoch_interval": 1,
+            "sample_batch_interval": 0
 }
 
 class build:
@@ -134,6 +135,7 @@ class build:
         config_json.setdefault("depth", 1)
         config_json.setdefault("seed", 42)
         config_json.setdefault("sample_epoch_interval", 1)
+        config_json.setdefault("sample_batch_interval", 0)
         # Infer the modality mode from the existing depth on legacy configs.
         # Pre-#6 (single-modality, depth=1) configs are profile training; post-#6
         # configs (silent rebuild → depth=2) are merged. New configs default to
@@ -168,7 +170,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42, modality="magnified_profile", sample_epoch_interval=1):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42, modality="magnified_profile", sample_epoch_interval=1, sample_batch_interval=0):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -244,6 +246,7 @@ class build:
         self.seed = int(seed) if seed is not None else 42
         self.modality = str(modality) if modality else "magnified_profile"
         self.sample_epoch_interval = int(sample_epoch_interval) if sample_epoch_interval is not None else 1
+        self.sample_batch_interval = int(sample_batch_interval) if sample_batch_interval is not None else 0
 
         default_checkpoint_filename = "generator.weights.h5" if self.architecture == "generator" else "discriminator.weights.h5"
         self.checkpoint = _normalize_checkpoint(self.save_dir, checkpoint, default_checkpoint_filename)
@@ -304,7 +307,8 @@ class build:
             "adaptive_steps": self.adaptive_steps,
             "seed": self.seed,
             "modality": self.modality,
-            "sample_epoch_interval": self.sample_epoch_interval
+            "sample_epoch_interval": self.sample_epoch_interval,
+            "sample_batch_interval": self.sample_batch_interval
         }
         return config
 
@@ -421,4 +425,6 @@ def configure_generic(config, args):
         config.modality = args.modality
     if getattr(args, "sample_epoch_interval", None) is not None:
         config.sample_epoch_interval = args.sample_epoch_interval
+    if getattr(args, "sample_batch_interval", None) is not None:
+        config.sample_batch_interval = args.sample_batch_interval
     return config

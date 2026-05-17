@@ -174,6 +174,10 @@ def parse_args():
                         help='Which modality the trainer feeds the GAN. Default: magnified_profile.')
     parser.add_argument('--sample_epoch_interval', type=int, default=None,
                         help='Generate seeded preview samples every N epochs (0 to disable). Default: 1.')
+    parser.add_argument('--sample_batch_interval', type=int, default=None,
+                        help='Generate seeded preview samples every N batches during an epoch (0 to disable). '
+                             'Useful when one epoch spans many checkpoints and the epoch-end preview never fires. '
+                             'Default: 0.')
 
     # Parse the arguments
     return parser.parse_args()
