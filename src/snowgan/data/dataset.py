@@ -210,6 +210,12 @@ class DataManager:
                 batch.append(scaled_image)
                 print(f"Image {self.config.train_ind} added")
 
+                # HF datasets accumulates PIL/decoded buffers in process RAM
+                # on repeated indexed access (huggingface/datasets #4883, #7180).
+                # Drop references eagerly so they're collectable before the
+                # next iteration grabs another row.
+                del sample, image, scaled_image
+
                 count += 1
             self.config.train_ind += 1
 
@@ -310,6 +316,11 @@ class DataManager:
 
                 batch.append(merged_image)
                 print(f"Image add with core {self.config.train_ind} and profile {profile_ind} from segment {self.dataset['train'][profile_ind]['segment']}")
+
+                # HF datasets accumulates PIL buffers in process RAM on
+                # repeated indexed access (#4883, #7180). Drop references
+                # eagerly so they're collectable before the next iteration.
+                del sample, profile_sample, core_image, profile_image, merged_image
 
                 count += 1
             self.config.train_ind += 1
