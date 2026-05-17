@@ -6,6 +6,7 @@ from snowgan.generate import generate
 from snowgan.models.generator import load_generator
 from snowgan.models.discriminator import load_discriminator
 from snowgan.config import configure_disc, configure_gen, build
+from snowgan.checkpoint import resolve_weights_path
 from snowgan.utils import parse_args, configure_device, set_seed
 
 
@@ -63,8 +64,40 @@ def main():
         trainer.train(batch_size = args.batch_size, epochs = args.epochs)
 
     elif args.mode == "generate":
+        # `load_generator` builds the architecture but does not load
+        # weights — without this, `--mode generate` would emit noise from
+        # a fresh init. Mirror Trainer.__init__'s resolve+load_weights so
+        # `--mode generate --save_dir keras/snowgan/batch_<N>/` actually
+        # produces samples reflecting the trained generator. Prefer EMA
+        # shadow weights when present (eval-grade); fall back to the
+        # primary checkpoint.
+        ema_path = os.path.join(os.path.dirname(gen_config.checkpoint),
+                                "generator_ema.weights.h5")
+        weights_loaded = False
+        if os.path.exists(ema_path):
+            try:
+                generator.model.load_weights(ema_path)
+                print(f"Generator EMA weights loaded from {ema_path}")
+                weights_loaded = True
+            except Exception as e:
+                print(f"Warning: failed to load EMA weights ({e}); falling back to primary checkpoint.")
+        if not weights_loaded:
+            gen_weights_path = resolve_weights_path(gen_config.checkpoint)
+            if gen_weights_path is not None:
+                generator.model.load_weights(gen_weights_path)
+                print(f"Generator weights loaded from {gen_weights_path}")
+            else:
+                print(
+                    f"Warning: no generator weights found near {gen_config.checkpoint}. "
+                    f"Output will reflect random init — point --save_dir at a snapshot dir "
+                    f"(e.g. keras/snowgan/batch_<N>/) that contains generator.weights.h5."
+                )
 
-        _ = generate(generator, args.n_samples, args.latent_dim, args.save_dir)
+        synthetic_dir = os.path.join(gen_config.save_dir, "synthetic_images")
+        _ = generate(generator,
+                     count=args.n_samples,
+                     seed_size=gen_config.latent_dim,
+                     save_dir=f"{synthetic_dir}/")
 
 if __name__ == "__main__":
 
