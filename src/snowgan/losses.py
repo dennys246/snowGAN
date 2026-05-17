@@ -28,7 +28,6 @@ def compute_gradient_penalty(discriminator, real_images, fake_images):
         pred = tf.cast(pred, tf.float32)
 
     grads = tape.gradient(pred, interpolated)
-    grads = tape.gradient(pred, interpolated)
     norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3, 4]) + 1e-12)
     penalty = tf.reduce_mean((norm - 1.0) ** 2)
     return penalty
