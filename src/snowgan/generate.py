@@ -69,8 +69,16 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
             image = Image.fromarray(image_arr)
             # Save image with parameters provided
             save_image(image, filepath)
-    
-    return np.stack(synthetic_images)
+
+    # No return value on purpose. Both call sites (main.py and the trainer's
+    # preview block) discard the result. Materializing np.stack(synthetic_images)
+    # forced a full-resolution CPU copy of the entire preview batch
+    # (e.g. 10×1024×1024×3 ≈ 125 MB) on every call; repeated on the preview
+    # cadence those large transient allocations ratcheted process RSS upward via
+    # glibc arena fragmentation (freed but not returned to the OS), which is the
+    # slow CPU-RAM climb that OOM-kills long runs. Drop the dead allocation and
+    # release the device tensor eagerly.
+    del synthetic_images
 
 def save_image(image, filepath):
     # Ensure output dir exists
