@@ -21,6 +21,14 @@ dependencies = [
   "tensorflow>=2.18",
 ]
 
+[project.optional-dependencies]
+# Pull in huggingface_hub only when callers want the weights pipeline
+# (snowgan.weights.fetch and scripts/release_weights.py). Keeps the core
+# install lean for users who don't fetch hosted backbones.
+hub = [
+  "huggingface_hub>=0.20",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

@@ -52,6 +52,44 @@ snowgan --mode train --save_dir D:/Models/snowGAN/keras/ --gen_steps 4 --disc_lr
 snowgan --mode generate --n_samples 10
 ```
 
+## Distribution — pretrained backbones on HuggingFace Hub
+
+Trained snowGAN backbones are published as tagged releases on HuggingFace Hub:
+
+- [`RMDig/snowGAN-magnified-profile`](https://huggingface.co/RMDig/snowGAN-magnified-profile) — depth=1, profile modality.
+- [`RMDig/snowGAN-core`](https://huggingface.co/RMDig/snowGAN-core) — depth=1, core modality.
+
+Each release contains the weights-only artifacts (`discriminator.weights.h5`, `generator.weights.h5`, EMA / fade / lowres sidecars when applicable), their JSON config sidecars, and a `MANIFEST.md` describing training provenance (snowGAN git SHA, training data, advanced flags, persisted dataset splits, caveats).
+
+### Fetch a release (consumer side)
+
+```python
+from snowgan.weights import fetch
+path = fetch("RMDig/snowGAN-core", "v0.1.0")
+# path / "discriminator.weights.h5"
+# path / "discriminator_config.json"
+# path / "MANIFEST.md"
+```
+
+Cached locally via the standard HuggingFace cache; subsequent calls with the same `(repo, version)` return instantly. Always pin to a tag for reproducibility — passing a branch name (e.g. `"main"`) works but the artifacts can drift under you.
+
+Requires the optional dependency: `pip install snowgan[hub]` (or `pip install huggingface_hub`).
+
+### Publish a release (producer side)
+
+After a training run finishes, bundle and push:
+
+```bash
+python scripts/release_weights.py \
+  --save-dir keras/snowgan/magnified_profiles \
+  --repo RMDig/snowGAN-magnified-profile \
+  --tag v0.1.0 \
+  --create-repo \                    # first release only
+  --notes "First public release."
+```
+
+Auto-generates `MANIFEST.md` from the run's configs, validates required artifacts are present, uploads via `huggingface_hub.upload_folder` as a single commit, and creates the tag. Use `--dry-run` to preview before pushing. Requires `huggingface-cli login` (or `HF_TOKEN` env var).
+
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) — systems-engineering operating manual (session workflow,
