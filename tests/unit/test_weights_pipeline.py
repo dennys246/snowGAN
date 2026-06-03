@@ -251,6 +251,136 @@ def test_build_manifest_with_no_optional_artifacts(release_module, tmp_path):
     assert "(none)" in manifest
 
 
+def test_build_model_card_renders_yaml_frontmatter_and_sections(release_module, tmp_path):
+    """The model card has correct YAML frontmatter for HF Hub's parser, a
+    title that names the modality and tag, a how-to-use code snippet
+    referencing the right repo + tag, an architecture table, a training
+    stabilizers table, and a splits summary derived from the disc config."""
+    save_dir = tmp_path / "run"
+    _write_minimal_run(save_dir, optional=True)
+
+    card = release_module.build_model_card(
+        save_dir, "v0.1.0", "RMDig/snowGAN-core",
+        intended_use="", limitations="", notes="First release.",
+    )
+
+    # YAML frontmatter
+    assert card.startswith("---\n")
+    assert "license: apache-2.0" in card
+    assert "library_name: snowgan" in card
+    assert "pipeline_tag: image-generation" in card
+    assert "  - gan" in card
+    assert "  - modality-core" in card  # modality-specific tag
+    assert "  - rmdig/rocky_mountain_snowpack" in card
+
+    # Title + identity
+    assert "snowGAN — core backbone (v0.1.0)" in card
+
+    # Code snippet uses the right repo + tag
+    assert 'fetch("RMDig/snowGAN-core", "v0.1.0")' in card
+    assert 'disc.model.get_layer("features")' in card
+
+    # Architecture table
+    assert "| Modality | `core` (depth=1) |" in card
+    assert "| Resolution | 1024x1024 |" in card
+    # feature_dim = depth(1) * (1024/2^5)^2 * 1024 = 1 * 32^2 * 1024 = 1048576
+    assert "1048576" in card
+
+    # Training stabilizers table
+    assert "| Spectral norm | `True` |" in card
+    assert "| EMA decay (generator shadow) | `0.999` |" in card
+    assert "λ_gp=1.0" in card
+
+    # Splits derived from disc config (10/1/2 in our fixture)
+    assert "`trained_pool`: 10 groups" in card
+    assert "`validation_pool`: 1 groups" in card
+    assert "`test_pool`: 2 groups" in card
+
+    # Notes block rendered when notes provided
+    assert "## Release notes" in card
+    assert "First release." in card
+
+
+def test_build_model_card_uses_default_intended_use_and_limitations(release_module, tmp_path):
+    """When --intended-use / --limitations are empty, the card falls back
+    to sensible per-modality defaults referencing AvAI and the
+    single-modality caveat."""
+    save_dir = tmp_path / "run"
+    _write_minimal_run(save_dir, optional=False)
+
+    card = release_module.build_model_card(
+        save_dir, "v0.1.0", "RMDig/snowGAN-magnified-profile",
+        intended_use="", limitations="", notes="",
+    )
+
+    # Default intended-use mentions AvAI + the features tap
+    assert "transfer learning" in card.lower()
+    assert "AvAI" in card
+
+    # Default limitations notes single-modality + dataset caveat
+    assert "rmdig/rocky_mountain_snowpack" in card
+    assert "single-modality" in card.lower() or "Single-modality" in card
+
+    # No Release notes section when notes empty
+    assert "## Release notes" not in card
+
+
+def test_build_model_card_honors_explicit_overrides(release_module, tmp_path):
+    """Explicit --intended-use / --limitations text appears verbatim
+    in place of the defaults."""
+    save_dir = tmp_path / "run"
+    _write_minimal_run(save_dir, optional=False)
+
+    custom_intended = "Reserved for research use; do not deploy in safety-critical pipelines."
+    custom_limitations = "- Trained on a tiny dataset (~13 unique samples).\n- Late-training disc divergence."
+
+    card = release_module.build_model_card(
+        save_dir, "v0.1.0", "RMDig/snowGAN-core",
+        intended_use=custom_intended,
+        limitations=custom_limitations,
+        notes="",
+    )
+
+    assert custom_intended in card
+    assert "tiny dataset" in card
+    assert "Late-training disc divergence." in card
+    # Verify the defaults were displaced, not appended.
+    assert "transfer learning" not in card.lower() or custom_intended in card
+
+
+def test_model_card_listed_in_release_files(release_module, tmp_path):
+    """README.md (the model card) is part of the release upload alongside MANIFEST.md."""
+    save_dir = tmp_path / "run"
+    _write_minimal_run(save_dir)
+    # README.md doesn't have to exist on disk yet — release_files lists what
+    # the script will upload, and the script writes the card before listing.
+    files = release_module._list_release_files(save_dir)
+    assert "README.md" in files
+    assert "MANIFEST.md" in files
+
+
+def test_dry_run_writes_both_manifest_and_model_card(release_module, tmp_path, capsys):
+    """--dry-run produces MANIFEST.md AND README.md so users can inspect both
+    before pushing."""
+    save_dir = tmp_path / "run"
+    _write_minimal_run(save_dir, optional=True)
+
+    rc = release_module.main([
+        "--save-dir", str(save_dir),
+        "--repo", "RMDig/snowGAN-core",
+        "--tag", "v0.1.0",
+        "--notes", "smoke",
+        "--dry-run",
+    ])
+
+    assert rc == 0
+    assert (save_dir / "MANIFEST.md").exists()
+    assert (save_dir / "README.md").exists()
+    card = (save_dir / "README.md").read_text(encoding="utf-8")
+    assert "snowGAN — core backbone (v0.1.0)" in card
+    assert 'fetch("RMDig/snowGAN-core", "v0.1.0")' in card
+
+
 def test_validate_required_returns_missing(release_module, tmp_path):
     save_dir = tmp_path / "run"
     save_dir.mkdir()
@@ -307,7 +437,7 @@ def test_dry_run_writes_manifest_but_skips_upload(release_module, tmp_path, caps
 
     assert rc == 0
     assert (save_dir / "MANIFEST.md").exists()
-    manifest = (save_dir / "MANIFEST.md").read_text()
+    manifest = (save_dir / "MANIFEST.md").read_text(encoding="utf-8")
     assert "snowGAN release v0.1.0" in manifest
     # The {repo} placeholder in the manifest template should be substituted.
     assert "{repo}" not in manifest

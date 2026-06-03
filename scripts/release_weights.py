@@ -43,6 +43,7 @@ OPTIONAL_ARTIFACTS = (
     "discriminator_lowres.weights.h5",
 )
 MANIFEST_FILENAME = "MANIFEST.md"
+MODEL_CARD_FILENAME = "README.md"
 
 
 def build_manifest(
@@ -143,12 +144,203 @@ Snapshot of a snowGAN training run, packaged for downstream consumers
 """
 
 
+def build_model_card(
+    save_dir: Path,
+    tag: str,
+    repo: str,
+    *,
+    intended_use: str = "",
+    limitations: str = "",
+    notes: str = "",
+) -> str:
+    """Generate the HF Hub model card (README.md) body for a release.
+
+    The model card is the *public-facing* surface of the HF Hub repo — it
+    renders on the model's page and tells consumers what this is and how to
+    use it. Mostly derived from the configs (so future releases stay
+    coherent without manual editing); the prose sections (``intended_use``,
+    ``limitations``, ``notes``) accept free-text overrides.
+
+    The MANIFEST.md is the *technical* doc (provenance, every flag, every
+    artifact) and lives alongside the README. Different audiences:
+    MANIFEST = debugging; README = end-users.
+
+    Limitations / intended_use accept multi-line markdown; if empty, the
+    sections fall back to a sensible per-modality default.
+    """
+    disc_cfg = json.loads((save_dir / "discriminator_config.json").read_text())
+    gen_cfg = json.loads((save_dir / "generator_config.json").read_text())
+
+    modality = gen_cfg.get("modality", "magnified_profile")
+    depth = gen_cfg.get("depth", 1)
+    resolution = gen_cfg.get("resolution", [1024, 1024])
+    res_str = f"{resolution[0]}x{resolution[1]}"
+    filter_counts = disc_cfg.get("filter_counts", [])
+    feature_dim = depth * (resolution[0] // (2 ** len(filter_counts))) ** 2 * (filter_counts[-1] if filter_counts else 0)
+    fade_step = max(int(gen_cfg.get("fade_step") or 0), int(disc_cfg.get("fade_step") or 0))
+    trained_count = len(disc_cfg.get("trained_pool") or [])
+    val_count = len(disc_cfg.get("validation_pool") or [])
+    test_count = len(disc_cfg.get("test_pool") or [])
+
+    # YAML frontmatter — what HF Hub reads to populate the model page sidebar
+    # (license, tags, dataset link, etc.). Keep keys/values quoted to avoid
+    # ambiguity with the YAML parser.
+    tags = [
+        "gan", "wgan-gp", "image-generation", "snowpack",
+        "transfer-learning", f"modality-{modality}",
+    ]
+    tags_yaml = "\n".join(f"  - {t}" for t in tags)
+    frontmatter = (
+        "---\n"
+        "license: apache-2.0\n"
+        "language:\n  - en\n"
+        f"library_name: snowgan\n"
+        f"pipeline_tag: image-generation\n"
+        f"tags:\n{tags_yaml}\n"
+        f"datasets:\n  - {gen_cfg.get('dataset', 'rmdig/rocky_mountain_snowpack')}\n"
+        "---\n\n"
+    )
+
+    default_intended = (
+        f"Primary use case is **transfer learning** — downstream classifiers (e.g. "
+        f"[AvAI](https://github.com/dennys246/AvAI)) attach task heads to the discriminator's "
+        f"Conv3D backbone via `model.get_layer(\"features\").output`. Secondary use is "
+        f"generating synthetic {modality} samples via the generator."
+    )
+    intended_block = intended_use.strip() or default_intended
+
+    default_limitations = (
+        f"- Trained exclusively on the `rmdig/rocky_mountain_snowpack` dataset; "
+        f"generalization to other snow image distributions is untested.\n"
+        f"- Single-modality backbone (`{modality}`); paired-modality features must be "
+        f"composed on the consumer side (see [AvAI's `load_backbones`](https://github.com/dennys246/AvAI))."
+    )
+    limitations_block = limitations.strip() or default_limitations
+
+    notes_block = f"\n## Release notes\n\n{notes}\n" if notes.strip() else ""
+
+    return f"""{frontmatter}# snowGAN — {modality} backbone ({tag})
+
+WGAN-GP trained on the
+[Rocky Mountain Snowpack dataset](https://huggingface.co/datasets/{gen_cfg.get('dataset', 'rmdig/rocky_mountain_snowpack')}),
+single-modality (`{modality}`), depth={depth}, {res_str} resolution.
+Published from the [snowGAN](https://github.com/dennys246/snowGAN) project for
+downstream transfer-learning consumers.
+
+## How to use
+
+The canonical consumer-side path uses [`snowgan.weights.fetch`](https://github.com/dennys246/snowGAN/blob/main/src/snowgan/weights.py)
+to download + cache, then `snowgan.models.Discriminator` to rebuild and load:
+
+```python
+from snowgan.weights import fetch
+from snowgan.config import build
+from snowgan.models.discriminator import Discriminator
+
+# Fetch the release (cached locally after first call).
+path = fetch("{repo}", "{tag}")
+
+# Reconstruct the model from its sidecar config, then load weights.
+cfg = build(str(path / "discriminator_config.json"))
+disc = Discriminator(cfg)
+disc.model.build((None, cfg.depth, cfg.resolution[0], cfg.resolution[1], cfg.channels))
+disc.model.load_weights(str(path / "discriminator.weights.h5"))
+
+# Tap the named features layer — the cross-repo contract with downstream consumers.
+features = disc.model.get_layer("features")
+print("backbone features:", features.output.shape)  # (None, {feature_dim})
+```
+
+Requires `pip install snowgan[hub]` (pulls in `huggingface_hub`). Without the
+`[hub]` extra, `fetch()` raises a clean ImportError naming the missing dep.
+
+## Intended use
+
+{intended_block}
+
+## Architecture
+
+| Field | Value |
+| --- | --- |
+| Modality | `{modality}` (depth={depth}) |
+| Resolution | {res_str} |
+| Channels | {gen_cfg.get('channels', 3)} |
+| Latent dim | {gen_cfg.get('latent_dim', 100)} |
+| Generator filter counts | `{gen_cfg.get('filter_counts')}` |
+| Discriminator filter counts | `{filter_counts}` |
+| Conv kernel / stride | `{gen_cfg.get('kernel_size')}` / `{gen_cfg.get('kernel_stride')}` |
+| Backbone (Flatten "features") dim | {feature_dim} |
+| Final activation | `{gen_cfg.get('final_activation', 'tanh')}` |
+
+The discriminator's `Conv3D` layers use `ksize=(1, kH, kW)`, so the depth axis is
+broadcast — kernels themselves are depth-agnostic. This is the contract that lets
+downstream consumers compose multiple single-modality backbones into a depth=N model
+(e.g. profile + core stacked at depth=2 for paired-modality transfer).
+
+## Training
+
+Trained with WGAN-GP loss (Wasserstein + gradient penalty, λ_gp={disc_cfg.get('lambda_gp')})
+on the {modality} samples of [`{gen_cfg.get('dataset', 'rmdig/rocky_mountain_snowpack')}`](https://huggingface.co/datasets/{gen_cfg.get('dataset', 'rmdig/rocky_mountain_snowpack')}).
+At release: `fade_step={fade_step}`.
+
+| Stabilizer | Setting |
+| --- | --- |
+| Spectral norm | `{disc_cfg.get('spectral_norm')}` |
+| Differentiable augmentation | `{disc_cfg.get('augment')}` |
+| Adaptive augmentation (ADA) target | `{gen_cfg.get('ada_target')}` |
+| Adaptive disc/gen step ratio | `{gen_cfg.get('adaptive_steps')}` |
+| EMA decay (generator shadow) | `{gen_cfg.get('ema_decay')}` |
+| Multi-scale discriminator | `{disc_cfg.get('multiscale_disc')}` |
+| Gradient clip (global norm) | `{gen_cfg.get('grad_clip_norm')}` |
+| LR decay schedule | `{gen_cfg.get('lr_decay')}` (lr_min=`{gen_cfg.get('lr_min')}`) |
+| FID eval interval | `{gen_cfg.get('fid_interval')}` steps |
+
+### Dataset splits
+
+Splits are deterministic at the `(site, column, core)` group level (seed=42),
+persisted in both sidecar configs so downstream consumers (e.g. AvAI) evaluate
+on the same held-out cores the GAN never saw:
+
+- `trained_pool`: {trained_count} groups
+- `validation_pool`: {val_count} groups
+- `test_pool`: {test_count} groups
+
+## Limitations
+
+{limitations_block}
+
+## Files in this release
+
+- `discriminator.weights.h5` — main discriminator weights (the transfer backbone).
+- `discriminator_config.json` — architecture sidecar; pass to `snowgan.models.Discriminator(cfg)`.
+- `generator.weights.h5` + `generator_config.json` — generator weights and sidecar.
+- `generator_ema.weights.h5` — EMA shadow weights (only if EMA was enabled during training).
+- `generator_fade_endpoints.weights.h5` — progressive-fade toRGB endpoints (only if fade was used).
+- `discriminator_lowres.weights.h5` — multi-scale 256×256 critic (only if multiscale_disc was on).
+- `MANIFEST.md` — full provenance dump (git SHA, every training flag, every artifact). Read this for debugging.
+- `README.md` — this file.
+
+## License
+
+Apache 2.0 — see the [snowGAN repository](https://github.com/dennys246/snowGAN) for the full license text.
+
+## Cross-references
+
+- **Source code**: [github.com/dennys246/snowGAN](https://github.com/dennys246/snowGAN)
+- **Downstream transfer-learning project**: [github.com/dennys246/AvAI](https://github.com/dennys246/AvAI)
+- **Companion modality backbones**:
+  [`RMDig/snowGAN-magnified-profile`](https://huggingface.co/RMDig/snowGAN-magnified-profile),
+  [`RMDig/snowGAN-core`](https://huggingface.co/RMDig/snowGAN-core)
+- **Training dataset**: [`{gen_cfg.get('dataset', 'rmdig/rocky_mountain_snowpack')}`](https://huggingface.co/datasets/{gen_cfg.get('dataset', 'rmdig/rocky_mountain_snowpack')})
+{notes_block}"""
+
+
 def _validate_required(save_dir: Path) -> list[str]:
     return [a for a in REQUIRED_ARTIFACTS if not (save_dir / a).exists()]
 
 
 def _list_release_files(save_dir: Path) -> list[str]:
-    files = list(REQUIRED_ARTIFACTS) + [MANIFEST_FILENAME]
+    files = list(REQUIRED_ARTIFACTS) + [MANIFEST_FILENAME, MODEL_CARD_FILENAME]
     files.extend(a for a in OPTIONAL_ARTIFACTS if (save_dir / a).exists())
     return files
 
@@ -165,13 +357,21 @@ def main(argv=None) -> int:
     parser.add_argument("--tag", required=True,
                         help="Release tag (e.g. v0.1.0). Becomes a git tag on the HF repo.")
     parser.add_argument("--notes", default="",
-                        help="Free-text notes appended to MANIFEST.md.")
+                        help="Free-text notes appended to MANIFEST.md and the model card's "
+                             "Release notes section. Use for release-specific commentary "
+                             "(e.g. \"trained to fade_step 428k with all advanced flags\").")
+    parser.add_argument("--intended-use", default="",
+                        help="Override the model card's Intended use section. "
+                             "If omitted, a sensible default referencing transfer learning is generated.")
+    parser.add_argument("--limitations", default="",
+                        help="Override the model card's Limitations section. "
+                             "If omitted, a generic per-modality default is generated. Multi-line markdown OK.")
     parser.add_argument("--create-repo", action="store_true",
                         help="Create the model repo on HF Hub if it doesn't exist.")
     parser.add_argument("--private", action="store_true",
                         help="If creating the repo, make it private.")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Build the manifest and list files; do not upload.")
+                        help="Build the manifest + model card and list files; do not upload.")
     args = parser.parse_args(argv)
 
     save_dir = Path(args.save_dir).resolve()
@@ -190,8 +390,20 @@ def main(argv=None) -> int:
         "{repo}", args.repo
     )
     manifest_path = save_dir / MANIFEST_FILENAME
-    manifest_path.write_text(manifest_body)
+    # Force UTF-8 on Windows (default cp1252 chokes on non-ASCII like `λ` in the
+    # model card's lambda_gp display). HF Hub reads files as UTF-8.
+    manifest_path.write_text(manifest_body, encoding="utf-8")
     print(f"[release] wrote {manifest_path}")
+
+    model_card_body = build_model_card(
+        save_dir, args.tag, args.repo,
+        intended_use=args.intended_use,
+        limitations=args.limitations,
+        notes=args.notes,
+    )
+    model_card_path = save_dir / MODEL_CARD_FILENAME
+    model_card_path.write_text(model_card_body, encoding="utf-8")
+    print(f"[release] wrote {model_card_path}")
 
     files_to_upload = _list_release_files(save_dir)
     total_mb = sum((save_dir / f).stat().st_size for f in files_to_upload) / 1024 / 1024
