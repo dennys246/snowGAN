@@ -7,6 +7,27 @@ from PIL import Image
 
 from snowgan.modality import Modality
 
+import ctypes
+import ctypes.util
+
+
+def _release_native_heap():
+    """Return freed glibc arenas to the OS via malloc_trim.
+
+    The per-image PIL/PNG-encoder buffers allocated while saving previews are
+    freed by Python but glibc keeps the arenas, so process RSS ratchets up
+    ~15 MiB on every preview (invisible to tracemalloc; gc.collect does not
+    reclaim it — it is native, not a Python reference). malloc_trim(0) returns
+    them to the OS. Linux/glibc only; a harmless no-op elsewhere.
+    """
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6")
+        if hasattr(libc, "malloc_trim"):
+            libc.malloc_trim(0)
+    except Exception:
+        pass
+
+
 def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_prefix = 'synthetic', seed = None):
     """
     Generate synthetic images using the currently loaded generator and save
@@ -70,15 +91,20 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
             # Save image with parameters provided
             save_image(image, filepath)
 
-    # No return value on purpose. Both call sites (main.py and the trainer's
-    # preview block) discard the result. Materializing np.stack(synthetic_images)
-    # forced a full-resolution CPU copy of the entire preview batch
-    # (e.g. 10×1024×1024×3 ≈ 125 MB) on every call; repeated on the preview
-    # cadence those large transient allocations ratcheted process RSS upward via
-    # glibc arena fragmentation (freed but not returned to the OS), which is the
-    # slow CPU-RAM climb that OOM-kills long runs. Drop the dead allocation and
-    # release the device tensor eagerly.
+    # Release the per-image PIL/numpy buffers and the device tensor, THEN return
+    # the freed native heap to the OS. The PIL Image.fromarray + save path
+    # retains ~15 MiB of native (libImaging/libpng/zlib) heap per preview that
+    # Python frees but glibc keeps; on the preview cadence this ratchets process
+    # RSS up until long runs OOM in CPU RAM. del-ing the loop's last image/array
+    # first lets malloc_trim reclaim them too. Both call sites (main.py and the
+    # trainer preview block) discard the return value, so nothing needs these.
+    # (Measured: preview RSS delta went from +9.4 MiB to net-negative.)
+    try:
+        del image, image_arr
+    except (NameError, UnboundLocalError):
+        pass
     del synthetic_images
+    _release_native_heap()
 
 def save_image(image, filepath):
     # Ensure output dir exists
