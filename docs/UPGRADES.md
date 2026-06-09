@@ -104,6 +104,13 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
    `atexit` does not fire on SIGKILL, OOM, or kernel death. Move saves to a
    `ModelCheckpoint`-style callback on a step interval. Write via `tmp + os.replace()` so a
    half-written file never replaces a good checkpoint. Persist config JSON the same way.
+   **Manifested 2026-06-05 (now 🔴 in practice):** `save_model` calls
+   `model.save_weights()` directly to the final path, so an OOM-kill mid-write
+   truncated the live `generator.weights.h5` to 96 bytes and the next run failed
+   to load it. Recovered by restoring the full consistent set from the newest
+   intact `keras/snowgan/core/batch_<N>/` snapshot. Fix `save_weights` to
+   `tmp + os.replace()` before the next long run. See
+   [cpu-ram-leak-investigation.md](cpu-ram-leak-investigation.md#checkpoint-corruption--recovery).
 
 9. **Split the god-config.**
    [config.py](../src/snowgan/config.py) is a 350-line dict + mutable class with `atexit`
@@ -230,6 +237,17 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
     in `batch()` and `batch_merged()` are removed. Mixed-depth manifests would
     now trip the assertion immediately rather than triggering silent rebuilds.
 
+45. **cuDNN-on-Blackwell native CPU-RAM leak in the train step (~+1 MiB/batch).**
+    The GPU is an RTX 5080 (sm_120 / "CC 12.0a") but the installed CUDA/`ptxas`
+    (12.0.140) predates Blackwell, so TF JIT-compiles kernels from PTX and cuDNN
+    falls back to driver compilation every step (`None of the algorithms ...
+    trying fallback algorithms`), holding native workspace `malloc_trim` cannot
+    reclaim. Environmental, not a code bug; it predated the OOM problem and was
+    deferred. `TF_CUDNN_USE_FRONTEND=0` / `TF_CUDNN_USE_AUTOTUNE=0` did not help.
+    Durable fix: a CUDA 12.8+ / Blackwell-capable TF+cuDNN build. Stopgap:
+    periodic checkpoint+restart, or fewer disc/gen steps. Full context in
+    [cpu-ram-leak-investigation.md](cpu-ram-leak-investigation.md#still-open).
+
 ## Tier 🟡 — code health & velocity
 
 20. **Tests.**
@@ -303,13 +321,13 @@ health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architect
     `output_blend`) and document the actual semantics, or refactor to genuine progressive
     growth where spatial resolution ramps up. Do not ship under the current name.
 
-43. **Matplotlib plot uses implicit global state each batch.**
-    [trainer.py:348-360](../src/snowgan/trainer.py#L348-L360) calls `plt.plot` / `plt.title`
-    / `plt.savefig` / `plt.close()` without ever creating an explicit `Figure`. `plt.close()`
-    with no argument closes the *current* figure, but if the implicit figure was never
-    reset, state (legends, titles, axes) accumulates across saves and can leak. Root cause:
-    pyplot state-machine used as if it were stateless. Fix: `fig, ax = plt.subplots();
-    ax.plot(...); fig.savefig(...); plt.close(fig)` — explicit figure lifecycle per save.
+43. ~~**Matplotlib plot uses implicit global state each batch.**~~
+    **Resolved 2026-06-04 (PR #22).** Isolation showed that even an explicit
+    `Figure` + `plt.close(fig)` leaks per *created* figure on the Agg backend
+    (RSS 61→1867 MiB over 300 calls). The fix went further: `plot_history` now
+    creates **one persistent figure once** and reuses it via `ax.cla()` each call
+    (flat at 189 MiB). See
+    [cpu-ram-leak-investigation.md](cpu-ram-leak-investigation.md).
 
 44. **Manifest duplicated in memory alongside the HF dataset.**
     [data/dataset.py:17-20](../src/snowgan/data/dataset.py#L17-L20) materializes the HF
