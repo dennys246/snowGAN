@@ -37,20 +37,35 @@ class Generator(keras.Model):
 
         feats = []
         ksize = (1, self.config.kernel_size[0], self.config.kernel_size[1])
-        kstride = (1, self.config.kernel_stride[0], self.config.kernel_stride[1])
+        # The depth axis is never upsampled (paired modalities live there); the
+        # spatial upsampling factor comes from kernel_stride.
+        up_size = (1, self.config.kernel_stride[0], self.config.kernel_stride[1])
 
         for filters in self.config.filter_counts:
-            x = keras.layers.Conv3DTranspose(filters, ksize, strides=kstride, padding=self.config.padding)(x)
+            # Resize-convolution upsampling (Odena et al. 2016, "Deconvolution
+            # and Checkerboard Artifacts"): nearest-neighbor upsample then a
+            # stride-1 conv, instead of a strided Conv3DTranspose whose kernel
+            # (3) does not divide the stride (2) and stamps a fixed checkerboard
+            # lattice into every output pixel — the grid texture seen in v0.1
+            # core samples.
+            x = keras.layers.UpSampling3D(size=up_size)(x)
+            x = keras.layers.Conv3D(filters, ksize, strides=1, padding=self.config.padding)(x)
             if self.config.batch_norm:
                 x = keras.layers.BatchNormalization()(x)
             x = keras.layers.LeakyReLU(self.config.negative_slope)(x)
             feats.append(x)
 
+        # toRGB preserves the final doubling (the "+1" in the
+        # 16*2^(len(filter_counts)+1) resolution coupling) but as an
+        # UpSampling + stride-1 1x1 conv, so the pixel-producing layer carries
+        # no transposed-conv checkerboard.
+        #
         # Pin the output head to float32 even under a mixed_float16 global
         # policy. The final tanh saturates near ±1; computing it in fp16
         # underflows around the asymptotes and overflows the upstream
         # gradient. UPGRADES #15 cataloged this as a 🟠 correctness item.
-        curr_img = keras.layers.Conv3DTranspose(self.config.channels, ksize, strides=kstride, padding=self.config.padding, activation=self.config.final_activation, use_bias=False, name="toRGB_curr", dtype="float32")(x)
+        x_rgb = keras.layers.UpSampling3D(size=up_size, name="toRGB_upsample")(x)
+        curr_img = keras.layers.Conv3D(self.config.channels, kernel_size=(1, 1, 1), strides=1, padding='same', activation=self.config.final_activation, use_bias=False, name="toRGB_curr", dtype="float32")(x_rgb)
 
         base_model = keras.Model(inputs, curr_img, name="Generator")
 
