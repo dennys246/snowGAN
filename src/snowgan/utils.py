@@ -148,7 +148,7 @@ def parse_args():
     parser.add_argument('--disc_beta_1', type = float, help = 'Discriminators adam beta one (Defaults to 0.5)')
     parser.add_argument('--disc_beta_2', type = float, help = 'Discriminators dam beta two (Defaults to 0.9)')
     parser.add_argument('--disc_negative_slope', type = float, help = 'Discriminators negative slope for leaky relu (Defaults to 0.25)')
-    parser.add_argument('--disc_lambda_gp', type = int, help = 'Disciminators lambda GP (Defaults to 10.0)')
+    parser.add_argument('--disc_lambda_gp', type = float, default = None, help = 'Discriminator gradient-penalty weight. 0 disables GP (spectral-norm-only critic). Defaults to 10.0')
     parser.add_argument('--disc_steps', type = int, help = 'Steps the discriminator takes per batch (Defaults to 1)')
     parser.add_argument('--disc_filters', type = str, help = 'Discriminator filters per convolution layer (Defaults to [64, 128, 256, 512, 1024])')
 

@@ -397,6 +397,10 @@ def configure_disc(config, args):
         # Favor a stronger discriminator at 1024x1024
         config.training_steps = config.training_steps or 5
     if args.disc_filters: config.filter_counts = [int(datum) for datum in args.disc_filters.split(' ')]
+    # None-aware so `--disc_lambda_gp 0` (disable GP, spectral-norm-only critic)
+    # is honored rather than dropped by a truthiness check.
+    if getattr(args, "disc_lambda_gp", None) is not None:
+        config.lambda_gp = float(args.disc_lambda_gp)
     if config.learning_rate is None or config.learning_rate == 0:
         config.learning_rate = 1e-4
     if config.lambda_gp is None:
