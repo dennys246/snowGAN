@@ -637,11 +637,21 @@ class Trainer:
                 synthetic_output = self.disc.model(disc_fake, training=True)
                 real_scores = output  # Track for ADA
 
-                # Calculate discriminators gradient penalty (on unaugmented images for stable gradients)
-                gp = compute_gradient_penalty(self.disc, images, synthetic_images)
+                # Gradient penalty. Skipped entirely when lambda_gp == 0: with
+                # spectral norm enforcing the Lipschitz constraint structurally,
+                # a GP on top double-constrains the critic (the SN+GP over-
+                # regularization the audit flagged). When active, compute it on
+                # the SAME augmented tensors the critic is scored on, so the
+                # 1-Lipschitz constraint is enforced on the distribution the
+                # critic actually sees (DiffAugment recipe), not the raw manifold.
+                lambda_gp = self.disc.config.lambda_gp or 0.0
+                if lambda_gp > 0:
+                    gp = compute_gradient_penalty(self.disc, disc_real, disc_fake)
+                else:
+                    gp = tf.constant(0.0, dtype=tf.float32)
 
                 # Calculate EMD/loss for the discriminators outputs
-                disc_loss = self.disc.get_loss(output, synthetic_output, gp, self.disc.config.lambda_gp)
+                disc_loss = self.disc.get_loss(output, synthetic_output, gp, lambda_gp)
 
             # Backpropogate main discriminator
             disc_gradients = tape.gradient(disc_loss, self.disc.model.trainable_variables)

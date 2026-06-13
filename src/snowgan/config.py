@@ -205,7 +205,10 @@ class build:
         self.beta_1 = float(beta_1) or 0.5
         self.beta_2 = float(beta_2) or 0.9
         self.negative_slope = float(negative_slope) or 0.25
-        self.lambda_gp = float(lambda_gp) or None
+        # Preserve an explicit 0.0 (GP disabled). `float(x) or None` mapped 0.0
+        # to None, which configure_disc then forced back to 10.0 — making it
+        # impossible to turn the gradient penalty off from config.
+        self.lambda_gp = float(lambda_gp) if lambda_gp is not None else None
         self.latent_dim = int(latent_dim) or 100
         self.convolution_depth = int(convolution_depth) or 5
         self.filter_counts = filter_counts or [32, 64, 128, 256, 512]
