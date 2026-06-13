@@ -49,7 +49,12 @@ class Discriminator(keras.Model):
         # precision policy. Wasserstein scores are unbounded, so fp16 can
         # overflow during the WGAN-GP gradient penalty's interpolation pass
         # and corrupt the entire loss. UPGRADES #15.
-        dense = keras.layers.Dense(1, dtype="float32")  # No activation for WGAN
+        # No activation: a WGAN critic outputs an unbounded linear score.
+        # config.final_activation (e.g. "tanh") is intentionally IGNORED here —
+        # it applies only to the generator's RGB head. Do not wire it into this
+        # head: a bounded critic score would break the Wasserstein estimate and
+        # the gradient penalty.
+        dense = keras.layers.Dense(1, dtype="float32")
         outputs = keras.layers.SpectralNormalization(dense)(x) if use_sn else dense(x)
 
         return keras.Model(inputs, outputs, name="Discriminator")
