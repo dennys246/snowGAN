@@ -107,6 +107,7 @@ config_template = {
             "augment": False,
             "lr_decay": None,
             "lr_min": 1e-7,
+            "lr_decay_steps": 0,
             "ema_decay": 0.0,
             "fid_interval": 0,
             "multiscale_disc": False,
@@ -170,7 +171,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42, modality="magnified_profile", sample_epoch_interval=1, sample_batch_interval=0):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, lr_decay_steps=0, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42, modality="magnified_profile", sample_epoch_interval=1, sample_batch_interval=0):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -237,6 +238,10 @@ class build:
         self.augment = bool(augment)
         self.lr_decay = lr_decay  # "cosine" or None
         self.lr_min = float(lr_min) if lr_min is not None else 1e-7
+        # Cosine decay horizon. 0 means "unset" — the trainer falls back to a
+        # long horizon and warns, rather than the old hard-coded 200k that
+        # silently floored both LRs at lr_min ~70% into a long run.
+        self.lr_decay_steps = int(lr_decay_steps) if lr_decay_steps else 0
         self.ema_decay = float(ema_decay) if ema_decay else 0.0
         self.fid_interval = int(fid_interval) if fid_interval else 0
         self.multiscale_disc = bool(multiscale_disc)
@@ -299,6 +304,7 @@ class build:
             "augment": self.augment,
             "lr_decay": self.lr_decay,
             "lr_min": self.lr_min,
+            "lr_decay_steps": self.lr_decay_steps,
             "ema_decay": self.ema_decay,
             "fid_interval": self.fid_interval,
             "multiscale_disc": self.multiscale_disc,
@@ -409,6 +415,8 @@ def configure_generic(config, args):
         config.lr_decay = args.lr_decay
     if getattr(args, "lr_min", None) is not None:
         config.lr_min = args.lr_min
+    if getattr(args, "lr_decay_steps", None) is not None:
+        config.lr_decay_steps = args.lr_decay_steps
     if getattr(args, "ema_decay", None) is not None:
         config.ema_decay = args.ema_decay
     if getattr(args, "fid_interval", None) is not None:

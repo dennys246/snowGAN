@@ -6,6 +6,23 @@ from matplotlib import pyplot as plt
 from glob import glob
 
 
+def cosine_decayed_lr(base_lr, lr_min, post_fade_step, decay_steps):
+    """Cosine-annealed learning rate, extracted as a pure function so the
+    schedule can be unit-tested without constructing a Trainer.
+
+    Anneals from ``base_lr`` at ``post_fade_step == 0`` down to ``lr_min`` at
+    ``post_fade_step == decay_steps``, holding ``lr_min`` thereafter. The
+    horizon ``decay_steps`` is a caller-supplied parameter (NOT a hard-coded
+    200k): a too-short horizon was what silently floored both LRs ~70% into a
+    long run (the post-250k destabilization).
+    """
+    decay_steps = max(1, int(decay_steps))
+    post_fade_step = max(0, int(post_fade_step))
+    progress = min(post_fade_step / decay_steps, 1.0)
+    cosine_factor = 0.5 * (1.0 + math.cos(math.pi * progress))
+    return lr_min + (base_lr - lr_min) * cosine_factor
+
+
 def _process_rss_mb() -> float:
     """Resident-set size of the current process in MiB. Linux /proc only."""
     try:
@@ -158,6 +175,8 @@ class Trainer:
         # Learning rate decay (cosine annealing)
         self.lr_decay = getattr(self.gen.config, 'lr_decay', None)
         self.lr_min = getattr(self.gen.config, 'lr_min', 1e-7)
+        self.lr_decay_steps = int(getattr(self.gen.config, 'lr_decay_steps', 0) or 0)
+        self._lr_horizon_warned = False
         self.gen_lr_base = float(self.gen.config.learning_rate)
         self.disc_lr_base = float(self.disc.config.learning_rate)
 
@@ -255,13 +274,24 @@ class Trainer:
         post_fade_step = self.global_step - self.fade_steps
         if post_fade_step < 0:
             post_fade_step = 0
-        # Cosine decay over a long horizon (200k steps) with minimum floor
-        decay_steps = 200000
-        progress = min(post_fade_step / decay_steps, 1.0)
-        cosine_factor = 0.5 * (1.0 + math.cos(math.pi * progress))
+        # Horizon is config-driven. If unset, fall back to a long horizon (and
+        # warn once) rather than the old hard-coded 200k, which floored both LRs
+        # at lr_min ~70% into this run and froze learning (the post-250k drift).
+        if self.lr_decay_steps > 0:
+            decay_steps = self.lr_decay_steps
+        else:
+            decay_steps = 1_000_000
+            if not self._lr_horizon_warned:
+                print(
+                    "WARNING: lr_decay='cosine' with lr_decay_steps unset; "
+                    f"falling back to {decay_steps} steps. Set --lr_decay_steps "
+                    "to the planned run length so the schedule anneals over the "
+                    "real horizon."
+                )
+                self._lr_horizon_warned = True
 
-        gen_lr = self.lr_min + (self.gen_lr_base - self.lr_min) * cosine_factor
-        disc_lr = self.lr_min + (self.disc_lr_base - self.lr_min) * cosine_factor
+        gen_lr = cosine_decayed_lr(self.gen_lr_base, self.lr_min, post_fade_step, decay_steps)
+        disc_lr = cosine_decayed_lr(self.disc_lr_base, self.lr_min, post_fade_step, decay_steps)
 
         self.gen.optimizer.learning_rate.assign(gen_lr)
         self.disc.optimizer.learning_rate.assign(disc_lr)
@@ -502,6 +532,13 @@ class Trainer:
 
                 # Save the models state
                 if batch % self._save_interval == 0:
+                    # Log the live LR so a floored/over-decayed schedule is
+                    # visible in the run log instead of silently freezing
+                    # learning (the post-250k destabilization had no such signal).
+                    if self.lr_decay == "cosine":
+                        gen_lr = float(self.gen.optimizer.learning_rate.numpy())
+                        disc_lr = float(self.disc.optimizer.learning_rate.numpy())
+                        print(f"LR @ step {self.global_step}: gen={gen_lr:.2e} disc={disc_lr:.2e}")
                     self.save_model(f"{self.save_dir}/batch_{batch}/")
                     if self.cleanup_milestone > 0 and batch % self.cleanup_milestone == 0:
                         self._cleanup_saved_batches(100)

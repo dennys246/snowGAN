@@ -157,6 +157,7 @@ def parse_args():
     parser.add_argument('--augment', action='store_true', default=None, help='Enable differentiable augmentation during training')
     parser.add_argument('--lr_decay', type=str, default=None, choices=['cosine'], help='Learning rate decay schedule (e.g. "cosine")')
     parser.add_argument('--lr_min', type=float, default=None, help='Minimum learning rate for LR decay (Defaults to 1e-7)')
+    parser.add_argument('--lr_decay_steps', type=int, default=None, help='Cosine decay horizon in steps. Set to the planned run length so LRs reach lr_min at end-of-training, not partway through (0/unset = long-horizon fallback)')
     parser.add_argument('--ema_decay', type=float, default=None, help='EMA decay for generator shadow weights (e.g. 0.999, 0 to disable)')
     parser.add_argument('--fid_interval', type=int, default=None, help='Steps between FID evaluations (0 to disable)')
     parser.add_argument('--multiscale_disc', action='store_true', default=None, help='Enable multi-scale discriminator (adds 256x256 head)')
