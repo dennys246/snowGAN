@@ -90,6 +90,7 @@ config_template = {
             "kernel_size": [3, 3],
             "kernel_stride": [2, 2],
             "batch_norm": False,
+            "gen_norm": None,
             "final_activation": "tanh",
             "zero_padding": None,
             "padding": "same",
@@ -171,7 +172,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, lr_decay_steps=0, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42, modality="magnified_profile", sample_epoch_interval=1, sample_batch_interval=0):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, gen_norm=None, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, lr_decay_steps=0, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42, modality="magnified_profile", sample_epoch_interval=1, sample_batch_interval=0):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -211,6 +212,14 @@ class build:
         self.kernel_size = kernel_size or [5, 5]
         self.kernel_stride = kernel_stride or [2, 2]
         self.batch_norm = batch_norm or False
+        # gen_norm supersedes batch_norm: "pixel" (PixelNorm — GP-safe, the
+        # WGAN-recommended generator normalizer), "batch", or "none". When a
+        # legacy config omits it, derive from batch_norm so old runs keep their
+        # exact behavior (batch_norm=False -> "none").
+        if gen_norm is None:
+            self.gen_norm = "batch" if self.batch_norm else "none"
+        else:
+            self.gen_norm = str(gen_norm)
         self.final_activation = final_activation or "tanh"
         self.zero_padding = zero_padding or None
         self.padding = padding or "same"
@@ -287,6 +296,7 @@ class build:
             "kernel_size": self.kernel_size,
             "kernel_stride": self.kernel_stride,
             "batch_norm": self.batch_norm,
+            "gen_norm": self.gen_norm,
             "final_activation":self.final_activation,
             "zero_padding": self.zero_padding,
             "padding": self.padding,
@@ -345,7 +355,7 @@ def configure_gen(config, args):
     if args.gen_checkpoint: config.checkpoint = args.gen_checkpoint
     if args.gen_kernel: config.kernel_size = [int(datum) for datum in args.gen_kernel.split(' ')]
     if args.gen_stride: config.kernel_stride = [int(datum) for datum in args.gen_stride.split(' ')]
-    if args.gen_norm: config.batch_norm = args.gen_norm
+    if args.gen_norm: config.gen_norm = args.gen_norm
     if args.gen_lr: config.learning_rate = args.gen_lr
     if args.gen_beta_1: config.beta_1 = args.gen_beta_1
     if args.gen_beta_2: config.beta_2 = args.gen_beta_2
