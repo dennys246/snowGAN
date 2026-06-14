@@ -4,6 +4,32 @@ Prioritized by blast radius. Tiers labeled 🔴 (bugs that silently corrupt trai
 features), 🟠 (production blockers — correctness, reproducibility, observability), 🟡 (code
 health / velocity), 🟢 (nice-to-have). Paired with [architecture.md](architecture.md).
 
+## Resolved — v0.2 core-model audit (2026-06-12, branch `feat/snowgan-core-v0.2`)
+
+A five-lens audit of the divergent core run produced these fixes. All ship with
+focused regression tests; v0.2 is a from-scratch retrain (the generator changes
+break the checkpoint format).
+
+- ~~**Cosine LR horizon hard-coded to 200k.**~~ With `fade_steps=50k` both LRs
+  floored at `lr_min` once `global_step` crossed 250k and froze learning for the
+  rest of the run — the real cause of the post-250k "destabilization" read as
+  disc/gen competition. Horizon is now config-driven (`lr_decay_steps`), with a
+  long-horizon fallback + warning and live-LR logging each save.
+- ~~**Checkerboard generator.**~~ Every upsample (incl. toRGB) was a stride-2
+  `Conv3DTranspose` with kernel 3 (not divisible by stride) — textbook
+  deconvolution checkerboard. Replaced with resize-convolution (`UpSampling3D`
+  + stride-1 `Conv3D`); toRGB is now a stride-1 1×1 conv.
+- ~~**Generator had no normalization.**~~ Added GP-safe `PixelNorm` (+ a second
+  conv per resolution), preventing the activation drift that saturated the
+  output tanh into the monochrome-blue collapse. New `gen_norm` config field
+  (pixel|batch|none), derived from legacy `batch_norm` when absent.
+- ~~**SN+GP double Lipschitz constraint.**~~ `lambda_gp=0` now genuinely
+  disables the gradient penalty (the `float(x) or None` coercion had forced it
+  back to 10.0), so the v0.2 critic relies on spectral norm alone.
+- ~~**Augment manifold + entropy.**~~ GP is computed on the same augmented
+  tensors the critic scores (not the raw manifold), and differentiable
+  augmentation is now per-image instead of one scalar decision per batch.
+
 ## Tier 🔴 — correctness bugs to fix before the next training run
 
 1. **Double-applied gradient penalty.**

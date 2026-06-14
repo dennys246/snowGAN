@@ -114,7 +114,7 @@ def parse_args():
     parser.add_argument('--dataset_dir', type = str, default = 'rmdig/rocky_mountain_snowpack', help = "Path to the Rocky Mountain Snowpack dataset, if none provided it will download directly from HF remote repository")
     parser.add_argument('--save_dir', type = str, default = "keras/snowgan/", help = "Path to save results where a pre-trained model may be found (defaults to keras/snowgan/)")
     
-    parser.add_argument('--rebuild', type = bool, default = False, help = 'Whether to rebuild model from scratch (defaults to False)')
+    parser.add_argument('--rebuild', action='store_true', default=None, help='Initialize fresh models and IGNORE any saved weights in save_dir (start from scratch over an existing checkpoint dir without archiving it). Defaults to off.')
     
     parser.add_argument('--device', type = str, choices = ["cpu", "gpu"], default = "gpu", help = 'Device to run the model on (defaults to gpu)')
     parser.add_argument('--xla', action='store_true', default = False, help = 'Whether to use accelerated linear algebra (XLA) (defaults to False)')
@@ -139,7 +139,7 @@ def parse_args():
     parser.add_argument('--gen_negative_slope', type = float, help = 'Generators negative slope for leaky relu (Defaults to 0.25)')
     parser.add_argument('--gen_steps', type = int, help = 'Training steps the generator takes per batch (Defaults to 5)')
     parser.add_argument('--gen_filters', type = str, help = 'Generators filters per convolution layer (Defaults to [1024, 512, 256, 128, 64])')
-    parser.add_argument('--gen_norm', type = bool, help = "Generator batch normalization to prevent exploding gradients (default False)")
+    parser.add_argument('--gen_norm', type = str, default = None, choices = ['pixel', 'batch', 'none'], help = "Generator normalization: 'pixel' (PixelNorm, GP-safe, recommended for WGAN), 'batch' (BatchNorm), or 'none'. Default: none (legacy).")
 
     parser.add_argument('--disc_checkpoint', type = str, help = "Path to a pre-trained discriminator model to load")
     parser.add_argument('--disc_kernel', type = str, help = 'Discriminator kernel size (Defaults to [5, 5])')
@@ -148,7 +148,7 @@ def parse_args():
     parser.add_argument('--disc_beta_1', type = float, help = 'Discriminators adam beta one (Defaults to 0.5)')
     parser.add_argument('--disc_beta_2', type = float, help = 'Discriminators dam beta two (Defaults to 0.9)')
     parser.add_argument('--disc_negative_slope', type = float, help = 'Discriminators negative slope for leaky relu (Defaults to 0.25)')
-    parser.add_argument('--disc_lambda_gp', type = int, help = 'Disciminators lambda GP (Defaults to 10.0)')
+    parser.add_argument('--disc_lambda_gp', type = float, default = None, help = 'Discriminator gradient-penalty weight. 0 disables GP (spectral-norm-only critic). Defaults to 10.0')
     parser.add_argument('--disc_steps', type = int, help = 'Steps the discriminator takes per batch (Defaults to 1)')
     parser.add_argument('--disc_filters', type = str, help = 'Discriminator filters per convolution layer (Defaults to [64, 128, 256, 512, 1024])')
 
@@ -157,6 +157,7 @@ def parse_args():
     parser.add_argument('--augment', action='store_true', default=None, help='Enable differentiable augmentation during training')
     parser.add_argument('--lr_decay', type=str, default=None, choices=['cosine'], help='Learning rate decay schedule (e.g. "cosine")')
     parser.add_argument('--lr_min', type=float, default=None, help='Minimum learning rate for LR decay (Defaults to 1e-7)')
+    parser.add_argument('--lr_decay_steps', type=int, default=None, help='Cosine decay horizon in steps. Set to the planned run length so LRs reach lr_min at end-of-training, not partway through (0/unset = long-horizon fallback)')
     parser.add_argument('--ema_decay', type=float, default=None, help='EMA decay for generator shadow weights (e.g. 0.999, 0 to disable)')
     parser.add_argument('--fid_interval', type=int, default=None, help='Steps between FID evaluations (0 to disable)')
     parser.add_argument('--multiscale_disc', action='store_true', default=None, help='Enable multi-scale discriminator (adds 256x256 head)')

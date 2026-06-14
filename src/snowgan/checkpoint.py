@@ -55,6 +55,36 @@ def resolve_weights_path(declared_path: Optional[str]) -> Optional[str]:
     return None
 
 
+def weights_use_spectral_norm(path: Optional[str]) -> Optional[bool]:
+    """Best-effort: does this ``.weights.h5`` contain SpectralNormalization state?
+
+    Returns ``True``/``False`` when determinable, ``None`` when the format can't
+    be inspected (legacy ``.keras`` bundle, missing file, or no ``h5py``). Used
+    to fail fast with a clear message when a checkpoint's spectral-norm
+    structure disagrees with the model being built, instead of surfacing the
+    opaque Keras "expected N variables, received 0" traceback.
+
+    Detection keys on the wrapper's persisted ``vector_u`` weight and the
+    ``spectral_normalization`` layer-group name, both of which exist iff the
+    saved model wrapped its convs in ``keras.layers.SpectralNormalization``.
+    """
+    if not path or not path.endswith(_PREFERRED_EXT) or not os.path.exists(path):
+        return None
+    try:
+        import h5py
+    except ImportError:
+        return None
+    try:
+        found = False
+        with h5py.File(path, "r") as handle:
+            names: list[str] = []
+            handle.visit(names.append)
+            found = any("vector_u" in n or "spectral_normalization" in n for n in names)
+        return found
+    except OSError:
+        return None
+
+
 def to_weights_path(declared_path: str) -> str:
     """Return the canonical ``*.weights.h5`` path derived from ``declared_path``.
 

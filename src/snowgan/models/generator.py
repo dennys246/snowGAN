@@ -4,6 +4,32 @@ import keras
 
 from snowgan.config import build
 
+
+class PixelNorm(keras.layers.Layer):
+    """Per-pixel feature-vector normalization (ProGAN, Karras et al. 2018).
+
+    Normalizes each spatial position's channel vector to unit RMS. Unlike
+    BatchNorm it uses no batch statistics, so it is safe under WGAN-GP (the
+    gradient penalty is a per-sample quantity that BatchNorm would couple
+    across the batch) and gives the generator the activation-scale control its
+    deep transposed/resize-conv stack otherwise lacks — without which the
+    final tanh saturates toward a single hue (the v0.1 monochrome blobs).
+    """
+
+    def __init__(self, epsilon=1e-8, **kwargs):
+        super().__init__(**kwargs)
+        self.epsilon = epsilon
+
+    def call(self, inputs):
+        scale = tf.math.rsqrt(tf.reduce_mean(tf.square(inputs), axis=-1, keepdims=True) + self.epsilon)
+        return inputs * scale
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"epsilon": self.epsilon})
+        return config
+
+
 class Generator(keras.Model):
     def __init__(self, config):
         """
@@ -37,20 +63,44 @@ class Generator(keras.Model):
 
         feats = []
         ksize = (1, self.config.kernel_size[0], self.config.kernel_size[1])
-        kstride = (1, self.config.kernel_stride[0], self.config.kernel_stride[1])
+        # The depth axis is never upsampled (paired modalities live there); the
+        # spatial upsampling factor comes from kernel_stride.
+        up_size = (1, self.config.kernel_stride[0], self.config.kernel_stride[1])
+        gen_norm = getattr(self.config, "gen_norm", None) or ("batch" if self.config.batch_norm else "none")
+
+        def conv_block(x, filters):
+            """Stride-1 conv + normalization + activation."""
+            x = keras.layers.Conv3D(filters, ksize, strides=1, padding=self.config.padding)(x)
+            if gen_norm == "batch":
+                x = keras.layers.BatchNormalization()(x)
+            elif gen_norm == "pixel":
+                x = PixelNorm()(x)
+            return keras.layers.LeakyReLU(self.config.negative_slope)(x)
 
         for filters in self.config.filter_counts:
-            x = keras.layers.Conv3DTranspose(filters, ksize, strides=kstride, padding=self.config.padding)(x)
-            if self.config.batch_norm:
-                x = keras.layers.BatchNormalization()(x)
-            x = keras.layers.LeakyReLU(self.config.negative_slope)(x)
+            # Resize-convolution upsampling (Odena et al. 2016, "Deconvolution
+            # and Checkerboard Artifacts"): nearest-neighbor upsample then a
+            # stride-1 conv, instead of a strided Conv3DTranspose whose kernel
+            # (3) does not divide the stride (2) and stamps a fixed checkerboard
+            # lattice into every output pixel — the grid texture seen in v0.1
+            # core samples. Two convs per resolution (ProGAN/StyleGAN) give the
+            # high-resolution stages the capacity a single 3x3 conv lacked.
+            x = keras.layers.UpSampling3D(size=up_size)(x)
+            x = conv_block(x, filters)
+            x = conv_block(x, filters)
             feats.append(x)
 
+        # toRGB preserves the final doubling (the "+1" in the
+        # 16*2^(len(filter_counts)+1) resolution coupling) but as an
+        # UpSampling + stride-1 1x1 conv, so the pixel-producing layer carries
+        # no transposed-conv checkerboard.
+        #
         # Pin the output head to float32 even under a mixed_float16 global
         # policy. The final tanh saturates near ±1; computing it in fp16
         # underflows around the asymptotes and overflows the upstream
         # gradient. UPGRADES #15 cataloged this as a 🟠 correctness item.
-        curr_img = keras.layers.Conv3DTranspose(self.config.channels, ksize, strides=kstride, padding=self.config.padding, activation=self.config.final_activation, use_bias=False, name="toRGB_curr", dtype="float32")(x)
+        x_rgb = keras.layers.UpSampling3D(size=up_size, name="toRGB_upsample")(x)
+        curr_img = keras.layers.Conv3D(self.config.channels, kernel_size=(1, 1, 1), strides=1, padding='same', activation=self.config.final_activation, use_bias=False, name="toRGB_curr", dtype="float32")(x_rgb)
 
         base_model = keras.Model(inputs, curr_img, name="Generator")
 

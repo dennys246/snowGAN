@@ -28,7 +28,7 @@ def _release_native_heap():
         pass
 
 
-def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_prefix = 'synthetic', seed = None):
+def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_prefix = 'synthetic', seed = None, gen_batch = 1):
     """
     Generate synthetic images using the currently loaded generator and save
     the images to the model's synthetic images folder.
@@ -40,10 +40,16 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
         save_dir (str) - Folder path to save images, if none provided images are
         filename_prefix (str) - prefix to give the filename
         seed (tf.Tensor) - Optional fixed latent vector for consistent visualization
+        gen_batch (int) - Generator forward sub-batch size. Previews run while
+            the full training graph is resident in VRAM, so forwarding all
+            `count` images at once spikes device memory with `count` — at 1024²
+            a 10-wide forward materializes multi-GB upsample intermediates and
+            OOMs. Chunking caps peak VRAM at `gen_batch` images regardless of
+            `count`. Defaults to 1 (previews are infrequent; correctness over
+            throughput).
     """
 
     # Check if the destimation exists
-    previously_generated = 0
     if os.path.exists(save_dir) == False: # If folder doesn't exists
         print(f"Output folder doesn't exist, creating directory")
         os.makedirs(f"{save_dir}", exist_ok = True) # Create folder
@@ -52,58 +58,68 @@ def generate(generator, count = 1, seed_size = 100, save_dir = None, filename_pr
     if seed is None:
         seed = tf.random.normal([count, seed_size])
 
-    # Generate synthetic images
-    synthetic_images = generator(seed, training = False)
-    print(f"Synthetic images generated: {synthetic_images.shape}")
-    
-    # Iterate through each synthetic image
-    for ind in range(synthetic_images.shape[0]):
-        
-        # Construct image filename
-        filepath = f"{save_dir}{filename_prefix}_{previously_generated + ind + 1}.png"
+    total = int(seed.shape[0])
+    gen_batch = max(1, int(gen_batch))
+    saved = 0
 
-        image_arr = synthetic_images[ind].numpy()
-        image_arr = (image_arr + 1.0) * 127.5
-        image_arr = np.clip(image_arr, 0, 255).astype(np.uint8)
+    # Forward the generator in sub-batches so peak device memory is bounded by
+    # gen_batch, not by count (the n_samples-wide preview was the OOM driver).
+    for start in range(0, total, gen_batch):
+        synthetic_images = generator(seed[start:start + gen_batch], training = False)
 
-        # If depth dimension present, save each slice separately. Single-
-        # modality runs (depth=1) collapse to one file with no per-modality
-        # suffix — there's only one modality represented, so the suffix
-        # would be redundant noise on the filesystem.
-        if image_arr.ndim == 4:
-            depth = image_arr.shape[0]
-            if depth == 1:
-                image = Image.fromarray(image_arr[0])
-                save_image(image, filepath)
+        for ind in range(synthetic_images.shape[0]):
+            # Construct image filename (1-based, running across all chunks)
+            filepath = f"{save_dir}{filename_prefix}_{saved + 1}.png"
+
+            image_arr = synthetic_images[ind].numpy()
+            image_arr = (image_arr + 1.0) * 127.5
+            image_arr = np.clip(image_arr, 0, 255).astype(np.uint8)
+
+            # If depth dimension present, save each slice separately. Single-
+            # modality runs (depth=1) collapse to one file with no per-modality
+            # suffix — there's only one modality represented, so the suffix
+            # would be redundant noise on the filesystem.
+            if image_arr.ndim == 4:
+                depth = image_arr.shape[0]
+                if depth == 1:
+                    image = Image.fromarray(image_arr[0])
+                    save_image(image, filepath)
+                else:
+                    modality_by_index = {int(m): m.name.lower() for m in Modality}
+                    for d in range(depth):
+                        suffix = modality_by_index.get(d, f"view{d}")
+                        arr = image_arr[d]
+                        if suffix == Modality.CORE.name.lower():
+                            arr = np.array(Image.fromarray(arr).resize((500, 300), Image.BICUBIC))
+                        split_path = filepath.replace(".png", f"_{suffix}.png")
+                        image = Image.fromarray(arr)
+                        save_image(image, split_path)
             else:
-                modality_by_index = {int(m): m.name.lower() for m in Modality}
-                for d in range(depth):
-                    suffix = modality_by_index.get(d, f"view{d}")
-                    arr = image_arr[d]
-                    if suffix == Modality.CORE.name.lower():
-                        arr = np.array(Image.fromarray(arr).resize((500, 300), Image.BICUBIC))
-                    split_path = filepath.replace(".png", f"_{suffix}.png")
-                    image = Image.fromarray(arr)
-                    save_image(image, split_path)
-        else:
-            # Convert to PIL image
-            image = Image.fromarray(image_arr)
-            # Save image with parameters provided
-            save_image(image, filepath)
+                # Convert to PIL image
+                image = Image.fromarray(image_arr)
+                # Save image with parameters provided
+                save_image(image, filepath)
 
-    # Release the per-image PIL/numpy buffers and the device tensor, THEN return
-    # the freed native heap to the OS. The PIL Image.fromarray + save path
-    # retains ~15 MiB of native (libImaging/libpng/zlib) heap per preview that
-    # Python frees but glibc keeps; on the preview cadence this ratchets process
-    # RSS up until long runs OOM in CPU RAM. del-ing the loop's last image/array
-    # first lets malloc_trim reclaim them too. Both call sites (main.py and the
-    # trainer preview block) discard the return value, so nothing needs these.
+            saved += 1
+
+        # Drop the chunk's device tensor before the next forward so the BFC
+        # pool can reuse it rather than growing to hold every chunk at once.
+        del synthetic_images
+
+    print(f"Synthetic images generated: {saved}")
+
+    # Release the per-image PIL/numpy buffers, THEN return the freed native heap
+    # to the OS. The PIL Image.fromarray + save path retains ~15 MiB of native
+    # (libImaging/libpng/zlib) heap per preview that Python frees but glibc
+    # keeps; on the preview cadence this ratchets process RSS up until long runs
+    # OOM in CPU RAM. del-ing the last image/array first lets malloc_trim
+    # reclaim them too. Both call sites (main.py and the trainer preview block)
+    # discard the return value, so nothing needs these.
     # (Measured: preview RSS delta went from +9.4 MiB to net-negative.)
     try:
         del image, image_arr
     except (NameError, UnboundLocalError):
         pass
-    del synthetic_images
     _release_native_heap()
 
 def save_image(image, filepath):

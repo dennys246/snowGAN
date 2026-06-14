@@ -90,6 +90,7 @@ config_template = {
             "kernel_size": [3, 3],
             "kernel_stride": [2, 2],
             "batch_norm": False,
+            "gen_norm": None,
             "final_activation": "tanh",
             "zero_padding": None,
             "padding": "same",
@@ -107,6 +108,7 @@ config_template = {
             "augment": False,
             "lr_decay": None,
             "lr_min": 1e-7,
+            "lr_decay_steps": 0,
             "ema_decay": 0.0,
             "fid_interval": 0,
             "multiscale_disc": False,
@@ -170,7 +172,7 @@ class build:
             config_json = config_template
         return config_json
 
-    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42, modality="magnified_profile", sample_epoch_interval=1, sample_batch_interval=0):
+    def configure(self, save_dir, checkpoint, dataset, datatype, architecture, resolution, images, trained_pool, validation_pool, test_pool, model_history, n_samples, epochs, current_epoch, batch_size, training_steps, learning_rate, beta_1, beta_2, negative_slope, lambda_gp, latent_dim, convolution_depth, filter_counts, kernel_size, kernel_stride, batch_norm, final_activation, zero_padding, padding, optimizer, loss, train_ind, trained_data, rebuild, gen_norm=None, fade=False, fade_steps=10000, fade_step=0, cleanup_milestone=1000, seen_profiles=None, channels=3, depth=1, spectral_norm=False, augment=False, lr_decay=None, lr_min=1e-7, lr_decay_steps=0, ema_decay=0.0, fid_interval=0, multiscale_disc=False, grad_clip_norm=0.0, ada_target=0.0, adaptive_steps=False, seed=42, modality="magnified_profile", sample_epoch_interval=1, sample_batch_interval=0):
 		# Process lists
         if isinstance(filter_counts, str):
             filter_counts = [int(datum) for datum in filter_counts.split(' ')]
@@ -203,13 +205,24 @@ class build:
         self.beta_1 = float(beta_1) or 0.5
         self.beta_2 = float(beta_2) or 0.9
         self.negative_slope = float(negative_slope) or 0.25
-        self.lambda_gp = float(lambda_gp) or None
+        # Preserve an explicit 0.0 (GP disabled). `float(x) or None` mapped 0.0
+        # to None, which configure_disc then forced back to 10.0 — making it
+        # impossible to turn the gradient penalty off from config.
+        self.lambda_gp = float(lambda_gp) if lambda_gp is not None else None
         self.latent_dim = int(latent_dim) or 100
         self.convolution_depth = int(convolution_depth) or 5
         self.filter_counts = filter_counts or [32, 64, 128, 256, 512]
         self.kernel_size = kernel_size or [5, 5]
         self.kernel_stride = kernel_stride or [2, 2]
         self.batch_norm = batch_norm or False
+        # gen_norm supersedes batch_norm: "pixel" (PixelNorm — GP-safe, the
+        # WGAN-recommended generator normalizer), "batch", or "none". When a
+        # legacy config omits it, derive from batch_norm so old runs keep their
+        # exact behavior (batch_norm=False -> "none").
+        if gen_norm is None:
+            self.gen_norm = "batch" if self.batch_norm else "none"
+        else:
+            self.gen_norm = str(gen_norm)
         self.final_activation = final_activation or "tanh"
         self.zero_padding = zero_padding or None
         self.padding = padding or "same"
@@ -237,6 +250,10 @@ class build:
         self.augment = bool(augment)
         self.lr_decay = lr_decay  # "cosine" or None
         self.lr_min = float(lr_min) if lr_min is not None else 1e-7
+        # Cosine decay horizon. 0 means "unset" — the trainer falls back to a
+        # long horizon and warns, rather than the old hard-coded 200k that
+        # silently floored both LRs at lr_min ~70% into a long run.
+        self.lr_decay_steps = int(lr_decay_steps) if lr_decay_steps else 0
         self.ema_decay = float(ema_decay) if ema_decay else 0.0
         self.fid_interval = int(fid_interval) if fid_interval else 0
         self.multiscale_disc = bool(multiscale_disc)
@@ -282,6 +299,7 @@ class build:
             "kernel_size": self.kernel_size,
             "kernel_stride": self.kernel_stride,
             "batch_norm": self.batch_norm,
+            "gen_norm": self.gen_norm,
             "final_activation":self.final_activation,
             "zero_padding": self.zero_padding,
             "padding": self.padding,
@@ -299,6 +317,7 @@ class build:
             "augment": self.augment,
             "lr_decay": self.lr_decay,
             "lr_min": self.lr_min,
+            "lr_decay_steps": self.lr_decay_steps,
             "ema_decay": self.ema_decay,
             "fid_interval": self.fid_interval,
             "multiscale_disc": self.multiscale_disc,
@@ -339,7 +358,7 @@ def configure_gen(config, args):
     if args.gen_checkpoint: config.checkpoint = args.gen_checkpoint
     if args.gen_kernel: config.kernel_size = [int(datum) for datum in args.gen_kernel.split(' ')]
     if args.gen_stride: config.kernel_stride = [int(datum) for datum in args.gen_stride.split(' ')]
-    if args.gen_norm: config.batch_norm = args.gen_norm
+    if args.gen_norm: config.gen_norm = args.gen_norm
     if args.gen_lr: config.learning_rate = args.gen_lr
     if args.gen_beta_1: config.beta_1 = args.gen_beta_1
     if args.gen_beta_2: config.beta_2 = args.gen_beta_2
@@ -378,6 +397,10 @@ def configure_disc(config, args):
         # Favor a stronger discriminator at 1024x1024
         config.training_steps = config.training_steps or 5
     if args.disc_filters: config.filter_counts = [int(datum) for datum in args.disc_filters.split(' ')]
+    # None-aware so `--disc_lambda_gp 0` (disable GP, spectral-norm-only critic)
+    # is honored rather than dropped by a truthiness check.
+    if getattr(args, "disc_lambda_gp", None) is not None:
+        config.lambda_gp = float(args.disc_lambda_gp)
     if config.learning_rate is None or config.learning_rate == 0:
         config.learning_rate = 1e-4
     if config.lambda_gp is None:
@@ -409,6 +432,8 @@ def configure_generic(config, args):
         config.lr_decay = args.lr_decay
     if getattr(args, "lr_min", None) is not None:
         config.lr_min = args.lr_min
+    if getattr(args, "lr_decay_steps", None) is not None:
+        config.lr_decay_steps = args.lr_decay_steps
     if getattr(args, "ema_decay", None) is not None:
         config.ema_decay = args.ema_decay
     if getattr(args, "fid_interval", None) is not None:
