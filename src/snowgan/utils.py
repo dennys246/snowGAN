@@ -114,7 +114,7 @@ def parse_args():
     parser.add_argument('--dataset_dir', type = str, default = 'rmdig/rocky_mountain_snowpack', help = "Path to the Rocky Mountain Snowpack dataset, if none provided it will download directly from HF remote repository")
     parser.add_argument('--save_dir', type = str, default = "keras/snowgan/", help = "Path to save results where a pre-trained model may be found (defaults to keras/snowgan/)")
     
-    parser.add_argument('--rebuild', type = bool, default = False, help = 'Whether to rebuild model from scratch (defaults to False)')
+    parser.add_argument('--rebuild', action='store_true', default=None, help='Initialize fresh models and IGNORE any saved weights in save_dir (start from scratch over an existing checkpoint dir without archiving it). Defaults to off.')
     
     parser.add_argument('--device', type = str, choices = ["cpu", "gpu"], default = "gpu", help = 'Device to run the model on (defaults to gpu)')
     parser.add_argument('--xla', action='store_true', default = False, help = 'Whether to use accelerated linear algebra (XLA) (defaults to False)')

@@ -6,6 +6,27 @@ from matplotlib import pyplot as plt
 from glob import glob
 
 
+def assert_spectral_norm_consistency(expected_sn, weights_path, which="Discriminator"):
+    """Fail fast when a checkpoint's spectral-norm structure disagrees with the
+    model being built.
+
+    A mixed/stale ``save_dir`` (e.g. a config that says ``spectral_norm: true``
+    sitting next to a plain-conv weights file) otherwise surfaces as the opaque
+    Keras ``expected 2 variables, received 0`` traceback. This raises a clear,
+    actionable error instead. No-op when the weights format can't be inspected.
+    """
+    actual_sn = weights_use_spectral_norm(weights_path)
+    if actual_sn is None or actual_sn == bool(expected_sn):
+        return
+    raise ValueError(
+        f"{which} checkpoint at {weights_path} "
+        f"{'USES' if actual_sn else 'does NOT use'} spectral normalization, but the "
+        f"model config has spectral_norm={bool(expected_sn)}. The saved weights and the "
+        f"model architecture disagree — this usually means a mixed/stale save_dir. "
+        f"Start fresh: move the directory aside, or pass --rebuild to ignore saved weights."
+    )
+
+
 def cosine_decayed_lr(base_lr, lr_min, post_fade_step, decay_steps):
     """Cosine-annealed learning rate, extracted as a pure function so the
     schedule can be unit-tested without constructing a Trainer.
@@ -34,7 +55,7 @@ def _process_rss_mb() -> float:
         pass
     return 0.0
 
-from snowgan.checkpoint import resolve_weights_path, to_weights_path
+from snowgan.checkpoint import resolve_weights_path, to_weights_path, weights_use_spectral_norm
 from snowgan.losses import compute_gradient_penalty
 from snowgan.generate import generate, make_movie
 from snowgan.log import save_history, load_history
@@ -77,7 +98,21 @@ class Trainer:
         # Now load weights — model shapes are aligned with the dataset's
         # pair depth, so load_weights raises on a real shape mismatch
         # rather than masking it with a silent rebuild.
-        gen_weights_path = resolve_weights_path(self.gen.config.checkpoint)
+        #
+        # --rebuild forces a clean from-scratch start: skip loading entirely so
+        # an existing (possibly stale/mismatched) save_dir can't warm-start or
+        # crash the run. This is the safe alternative to manually archiving the
+        # directory before a breaking-architecture change.
+        rebuild = bool(getattr(self.gen.config, "rebuild", False)) or bool(getattr(self.disc.config, "rebuild", False))
+        if rebuild:
+            print("REBUILD requested: ignoring any saved weights in save_dir, initializing fresh models")
+            # One-shot: clear the flag so the first save persists rebuild=False.
+            # Otherwise a config saved with rebuild=True would discard weights on
+            # every subsequent resume — the inverse footgun.
+            self.gen.config.rebuild = False
+            self.disc.config.rebuild = False
+
+        gen_weights_path = None if rebuild else resolve_weights_path(self.gen.config.checkpoint)
         if gen_weights_path is not None:
             self.gen.model.load_weights(gen_weights_path)
             print(f"Generator weights loaded from {gen_weights_path}")
@@ -90,8 +125,13 @@ class Trainer:
         else:
             print("Generator saved weights not found, new model initialized")
 
-        disc_weights_path = resolve_weights_path(self.disc.config.checkpoint)
+        disc_weights_path = None if rebuild else resolve_weights_path(self.disc.config.checkpoint)
         if disc_weights_path is not None:
+            # Fail fast with a clear message if the saved critic's spectral-norm
+            # structure disagrees with the config (mixed/stale save_dir), instead
+            # of the opaque Keras "expected 2 variables, received 0".
+            assert_spectral_norm_consistency(
+                getattr(self.disc.config, "spectral_norm", False), disc_weights_path, "Discriminator")
             self.disc.model.load_weights(disc_weights_path)
             print(f"Discriminator weights loaded from {disc_weights_path}")
         else:
